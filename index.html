@@ -1126,13 +1126,19 @@ MAPS.cache_town = {
       id: 'mom',
       x: 6, y: 7, dir: 1,
       color: '#ff88cc',
-      script: ['Welcome home, dear!', 'Dont wander into the tall grass alone!']
+      script: () => SAVE.flags.malware_first_encounter
+        ? ['Be careful out there — Team Malware has been spotted near Crawler Woods!', 'Glitches are getting worse. Stay safe, dear.']
+        : ['Welcome home, dear!', "Don't wander into the tall grass alone!"]
     },
     {
       id: 'oldman',
       x: 15, y: 10, dir: 2,
       color: '#aabbcc',
-      script: ['They say Route 1 is filled with wild Googlimon!', 'The Professor can help you get started.']
+      script: () => SAVE.flags.gym1_beaten
+        ? ['You beat the Searchburg Gym? Wonderful! The region needs heroes like you.']
+        : SAVE.flags.malware_first_encounter
+        ? ['Team Malware in Crawler Woods... this is serious. Be careful on Route 1.']
+        : ['They say Route 1 is filled with wild Googlimon!', 'The Professor can help you get started.']
     }
   ]
 };
@@ -1360,7 +1366,44 @@ const overworldState = (function() {
 
   function getNPCAt(tx, ty) {
     if (!map || !map.npcs) return null;
-    return map.npcs.find(n => n.x === tx && n.y === ty && !n.defeated) || null;
+    return map.npcs.find(n => n.x === tx && n.y === ty && !n.defeated && !n.hidden) || null;
+  }
+
+  function startTrainerBattle(npc) {
+    const team = npc.team.map(t => Object.assign({}, t, { hp: t.maxHp, revealedStats: new Set() }));
+    const first = team.shift();
+    dexSee(first.name);
+    setState('battle', {
+      wild: first, fighter: PLAYER.party[0],
+      isTrainer: true, trainerTeam: team,
+      trainerId: npc.id, trainerName: npc.trainerName || 'Trainer',
+      trainerReward: npc.reward || 100,
+    });
+  }
+
+  function triggerRivalEncounter() {
+    PLAYER.y -= 1; // step back from the blocked exit
+    const starterName = PLAYER.party[0] && PLAYER.party[0].name;
+    const teamFn = AVERY_TEAMS[starterName] || AVERY_TEAMS.Querycub;
+    const averyMon = teamFn();
+    npcDialogue = {
+      lines: [
+        'Hey! Wait up!',
+        "I'm Avery — I'm starting my journey today too.",
+        'Professor Search gave me a partner of my own.',
+        "Let's see whose Googlimon is stronger. Don't hold back!",
+      ],
+      lineIdx: 0, revealed: 0, timer: 0,
+      onEnd: () => {
+        dexSee(averyMon.name);
+        setState('battle', {
+          wild: averyMon, fighter: PLAYER.party[0],
+          isTrainer: true, trainerTeam: [],
+          trainerId: 'avery', trainerName: 'Avery',
+          trainerReward: 150,
+        });
+      }
+    };
   }
 
   function update() {
@@ -1377,7 +1420,9 @@ const overworldState = (function() {
         } else {
           npcDialogue.lineIdx++;
           if (npcDialogue.lineIdx >= npcDialogue.lines.length) {
+            const onEnd = npcDialogue.onEnd;
             npcDialogue = null;
+            if (onEnd) onEnd();
           } else {
             npcDialogue.revealed = 0;
             npcDialogue.timer = 0;
@@ -1427,10 +1472,37 @@ const overworldState = (function() {
       if (PLAYER.dir === 1) fx++;
       if (PLAYER.dir === 2) fy++;
       if (PLAYER.dir === 3) fx--;
-      const npc = (map && map.npcs && map.npcs.find(n => n.x === fx && n.y === fy)) || null;
+      const npc = (map && map.npcs && map.npcs.find(n => n.x === fx && n.y === fy && !n.hidden)) || null;
       if (npc) {
-        if (npc.id === 'prof_search' && !SAVE.starterChosen) {
-          setState('prof_intro');
+        if (npc.id === 'prof_search') {
+          if (!SAVE.starterChosen) {
+            setState('prof_intro');
+          } else {
+            const starterName = PLAYER.party[0] ? PLAYER.party[0].name : 'your Googlimon';
+            let lines;
+            if (SAVE.flags.gym1_beaten) {
+              lines = [
+                `How is ${starterName} doing?`,
+                "You've already conquered the Searchburg Gym — remarkable!",
+                'The Index instability is getting worse. Stay alert out there.',
+              ];
+            } else if (SAVE.flags.malware_first_encounter) {
+              lines = [
+                `${starterName} looks strong, ${SAVE.playerName}.`,
+                'I heard Team Malware confronted you in Crawler Woods...',
+                "Be careful. Whatever they want with the Index, it can't be good.",
+                "Scout Searcher's Gym in Searchburg awaits when you're ready.",
+              ];
+            } else {
+              lines = [
+                `Ah, ${SAVE.playerName} and ${starterName}!`,
+                "Searchburg's Gym Leader, Scout Searcher, uses Search-type Googlimon.",
+                'Tip: Look for moves that are super effective against Search types.',
+                'Good luck out there!',
+              ];
+            }
+            npcDialogue = { lines, lineIdx: 0, revealed: 0, timer: 0 };
+          }
         } else if (npc.id === 'nurse') {
           PLAYER.party.forEach(p => { p.hp = p.maxHp; p.moves && p.moves.forEach(m => { if (m.ppLeft !== undefined) m.ppLeft = m.pp; }); });
           npcDialogue = { lines: ['Welcome to the Googlimon Center!', 'Your Googlimon have been fully healed!', 'We hope to see you again!'], lineIdx: 0, revealed: 0, timer: 0 };
@@ -1439,21 +1511,17 @@ const overworldState = (function() {
         } else if (npc.isTrainer && !npc.defeated) {
           if (!PLAYER.party.length) {
             npcDialogue = { lines: ["..."], lineIdx: 0, revealed: 0, timer: 0 };
+          } else if (npc.preBattleLines && !npc._preBattleShown) {
+            npc._preBattleShown = true;
+            npcDialogue = { lines: npc.preBattleLines, lineIdx: 0, revealed: 0, timer: 0, onEnd: () => startTrainerBattle(npc) };
           } else {
-            const team = npc.team.map(t => Object.assign({}, t, { hp: t.maxHp, revealedStats: new Set() }));
-            const first = team.shift();
-            dexSee(first.name);
-            setState('battle', {
-              wild: first, fighter: PLAYER.party[0],
-              isTrainer: true, trainerTeam: team,
-              trainerId: npc.id, trainerName: npc.trainerName || 'Trainer',
-              trainerReward: npc.reward || 100,
-            });
+            startTrainerBattle(npc);
           }
         } else if (npc.defeated && npc.defeatScript) {
           npcDialogue = { lines: npc.defeatScript, lineIdx: 0, revealed: 0, timer: 0 };
         } else if (npc.script) {
-          npcDialogue = { lines: npc.script, lineIdx: 0, revealed: 0, timer: 0 };
+          const lines = typeof npc.script === 'function' ? npc.script() : npc.script;
+          npcDialogue = { lines, lineIdx: 0, revealed: 0, timer: 0, onEnd: npc.onTalkEnd ? () => npc.onTalkEnd(npc) : null };
         }
       }
     }
@@ -1463,6 +1531,11 @@ const overworldState = (function() {
     if (!map.exits) return false;
     const ex = map.exits.find(e => e.x === PLAYER.x && e.y === PLAYER.y);
     if (ex) {
+      if (PLAYER.mapId === 'cache_town' && ex.toMap === 'route1' &&
+          SAVE.starterChosen && !SAVE.flags.rival_battle_1) {
+        triggerRivalEncounter();
+        return true;
+      }
       PLAYER.mapId = ex.toMap;
       PLAYER.x = ex.toX;
       PLAYER.y = ex.toY;
@@ -1551,6 +1624,13 @@ const SAVE = {
   badges: [],
   items: {},
   trainerDefeated: [],
+  flags: {
+    met_professor: false,
+    starter_chosen: false,
+    gym1_beaten: false,
+    malware_first_encounter: false,
+    rival_battle_1: false,
+  },
 };
 PLAYER.party = [];
 
@@ -1575,6 +1655,32 @@ const STARTERS = [
     moves: ['Neural Zap', 'Tackle'],
   },
 ];
+
+// ── Rival (Avery) team — type-advantaged against the player's starter ──
+function mkRivalMon(name, type1, level, hp, atk, def, spd, moves) {
+  return {
+    name, level, type1, type2: null,
+    maxHp: hp, hp,
+    atk, def, spd,
+    moves: moves.map(m => Object.assign({}, m, { ppLeft: m.pp })),
+    catchRate: 0, xpYield: 50,
+    status: null, revealedStats: new Set(),
+  };
+}
+const AVERY_TEAMS = {
+  Querycub: () => mkRivalMon('Thinklet', 'AI', 5, 42, 13, 8, 13, [
+    { name: 'Neural Zap', type: 'AI',       power: 35, pp: 25 },
+    { name: 'Tackle',     type: 'Hardware', power: 30, pp: 35 },
+  ]),
+  Puffbit: () => mkRivalMon('Lockup', 'Electric', 5, 44, 11, 12, 9, [
+    { name: 'Zap Lock',   type: 'Electric', power: 30, pp: 30 },
+    { name: 'Shock Lock', type: 'Electric', power: 40, pp: 25 },
+  ]),
+  Thinklet: () => mkRivalMon('Puffbit', 'Cloud', 5, 48, 10, 13, 10, [
+    { name: 'Mist Byte', type: 'Cloud',    power: 30, pp: 30 },
+    { name: 'Tackle',    type: 'Hardware', power: 30, pp: 35 },
+  ]),
+};
 
 // ── Starter Sprites (canvas primitives) ──────────────────────
 function drawStarterSprite(idx, cx, cy) {
@@ -1759,6 +1865,7 @@ const profIntroState = (function() {
     lineIdx = 0;
     starterCursor = 0;
     chosenName = '';
+    SAVE.flags.met_professor = true;
     twSet(INTRO_LINES[0]);
   }
 
@@ -1804,6 +1911,7 @@ const profIntroState = (function() {
         chosenName = STARTERS[starterCursor].name;
         PLAYER.party.push(Object.assign({}, STARTERS[starterCursor]));
         SAVE.starterChosen = true;
+        SAVE.flags.starter_chosen = true;
         outroLines = mkOutro(SAVE.playerName, chosenName);
         lineIdx = 0;
         twSet(outroLines[0]);
@@ -1959,8 +2067,8 @@ MAPS.route1 = {
     mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 24 south border (exit back to Cache Town)
   ],
   exits: [
-    { x: 9,  y: 0,  toMap: 'searchburg', toX: 9,  toY: 13 },
-    { x: 10, y: 0,  toMap: 'searchburg', toX: 10, toY: 13 },
+    { x: 9,  y: 0,  toMap: 'crawler_woods', toX: 6,  toY: 17 },
+    { x: 10, y: 0,  toMap: 'crawler_woods', toX: 6,  toY: 17 },
     { x: 9,  y: 24, toMap: 'cache_town', toX: 9,  toY: 13 },
     { x: 10, y: 24, toMap: 'cache_town', toX: 10, toY: 13 },
   ],
@@ -1970,7 +2078,9 @@ MAPS.route1 = {
       id: 'sign_r1',
       x: 7, y: 22, dir: 2,
       color: '#aabb88',
-      script: ['Route 1 — Connecting Cache Town to Searchburg.', 'Wild Googlimon lurk in the tall grass!'],
+      script: () => SAVE.flags.malware_first_encounter
+        ? ['Route 1 — Connecting Cache Town to Searchburg.', 'Crawler Woods lies further north. Team Malware was seen there...']
+        : ['Route 1 — Connecting Cache Town to Searchburg.', 'Wild Googlimon lurk in the tall grass!'],
     },
   ],
   encounterPool: [
@@ -2220,10 +2330,16 @@ const battleState = (function() {
         if (!SAVE.badges.includes('Index Badge')) SAVE.badges.push('Index Badge');
         if (!SAVE.items['TM: Search Pulse']) SAVE.items['TM: Search Pulse'] = 0;
         SAVE.items['TM: Search Pulse']++;
+        SAVE.flags.gym1_beaten = true;
+      }
+      if (trainerId === 'avery') {
+        SAVE.flags.rival_battle_1 = true;
       }
     }
     const endMsgs = trainerId === 'scout_searcher'
       ? [`You defeated Scout Searcher!`, `The Index Badge is yours!`, `Take TM: Search Pulse!`]
+      : trainerId === 'avery'
+      ? [`You defeated Avery!`, `"I will not lose again."`, `Got ${trainerReward} credits!`]
       : [`You defeated ${trainerName}!`, `Got ${trainerReward} credits!`];
     queueMsgs(endMsgs, () => { phase = 'done'; });
   }
@@ -2442,7 +2558,8 @@ const battleState = (function() {
     const col = {
       Pixmouse:'#9966bb', Chirper:'#00bbcc', Bugbyte:'#44aa22',
       Mousenet:'#4488ee', Scoutgle:'#ddaa22', Lockup:'#22bb66',
-      Seekrow:'#445599', Findrake:'#cc8822',
+      Seekrow:'#445599', Findrake:'#cc8822', Nullhound:'#76bc3a',
+      Thinklet:'#8855cc', Puffbit:'#7aafc8',
     }[wild.name] || '#aaaaaa';
     ctx.fillStyle = col;
     ctx.beginPath(); ctx.arc(cx, cy, 22, 0, Math.PI*2); ctx.fill();
@@ -2494,6 +2611,16 @@ const battleState = (function() {
       ctx.beginPath(); ctx.moveTo(cx+5,cy-2); ctx.lineTo(cx+18,cy+8); ctx.stroke();
       ctx.lineWidth=1;
       fr(cx-20,cy+8,6,10,col); fr(cx+14,cy+8,6,10,col);       // front claws
+    } else if (wild.name === 'Nullhound') {
+      // Glitch-hound: jagged ears, corrupted fang grin
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.moveTo(cx-14,cy-22); ctx.lineTo(cx-6,cy-30); ctx.lineTo(cx-4,cy-18); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(cx+14,cy-22); ctx.lineTo(cx+6,cy-30); ctx.lineTo(cx+4,cy-18); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.moveTo(cx-6,cy+2); ctx.lineTo(cx-2,cy+2); ctx.lineTo(cx-4,cy+8); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(cx+2,cy+2); ctx.lineTo(cx+6,cy+2); ctx.lineTo(cx+4,cy+8); ctx.fill();
+      ctx.strokeStyle = '#0f1a0a'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx-20,cy-4); ctx.lineTo(cx-12,cy-1); ctx.lineTo(cx-18,cy+3); ctx.stroke();
     }
   }
 
@@ -2650,6 +2777,106 @@ SPECIES.Findrake = {
     {lv:5,  move:{name:'Index Claw', type:'Search',   power:55, pp:20, ppLeft:20}},
     {lv:9,  move:{name:'Web Crawl',  type:'Browser',  power:45, pp:20, ppLeft:20}},
     {lv:13, move:{name:'Rank Storm', type:'Search',   power:80, pp:10, ppLeft:10}},
+  ],
+};
+
+// ── Team Malware species ────────────────────────────────────
+SPECIES.Nullhound = {
+  type1:'Virus',
+  baseHp:40, baseAtk:14, baseDef:9, baseSpd:16,
+  catchRate:45, xpYield:95,
+  learnset:[
+    {lv:1, move:{name:'Corrupt Bite', type:'Virus',    power:35, pp:25, ppLeft:25}},
+    {lv:1, move:{name:'Snarl',        type:'Hardware', power:20, pp:35, ppLeft:35}},
+    {lv:4, move:{name:'Null Howl',    type:'Virus',    power:0,  pp:20, ppLeft:20, effect:'atk+1'}},
+    {lv:6, move:{name:'System Crash', type:'Virus',    power:55, pp:10, ppLeft:10}},
+  ],
+};
+
+// ── Crawler Woods (13×19) — dense forest between Route 1 and Searchburg ──
+MAPS.crawler_woods = {
+  name: 'Crawler Woods',
+  w: 13, h: 19,
+  tiles: [
+    mkRow('TTTTTT.TTTTTT'),  // row 0  north border (exit to Searchburg)
+    mkRow('TTTTTT.TTTTTT'),  // row 1
+    mkRow('TTTTGG.GGTTTT'),  // row 2  grass pocket
+    mkRow('TTTTTT.TTTTTT'),  // row 3
+    mkRow('TTTTTT.TTTTTT'),  // row 4  Analyst stands here
+    mkRow('TTTT.....TTTT'),  // row 5  clearing — Recruit 2
+    mkRow('TTTTTT.TTTTTT'),  // row 6
+    mkRow('TTTTGG.GGTTTT'),  // row 7  grass pocket
+    mkRow('TTTTTT.TTTTTT'),  // row 8
+    mkRow('TTT.......TTT'),  // row 9  breather clearing
+    mkRow('TTTTTT.TTTTTT'),  // row 10
+    mkRow('TTTTGG.GGTTTT'),  // row 11 grass pocket
+    mkRow('TTTTTT.TTTTTT'),  // row 12
+    mkRow('TTTT.....TTTT'),  // row 13 clearing — Recruit 1
+    mkRow('TTTTTT.TTTTTT'),  // row 14
+    mkRow('TTTTGG.GGTTTT'),  // row 15 grass pocket
+    mkRow('TTTTTT.TTTTTT'),  // row 16
+    mkRow('TTTTTT.TTTTTT'),  // row 17 (player arrives here from Route 1)
+    mkRow('TTTTTT.TTTTTT'),  // row 18 south border (exit to Route 1)
+  ],
+  exits: [
+    { x: 6, y: 0,  toMap: 'searchburg', toX: 9, toY: 13 },
+    { x: 6, y: 18, toMap: 'route1',     toX: 9, toY: 1 },
+  ],
+  playerStart: { x: 6, y: 17 },
+  npcs: [
+    {
+      id: 'malware_recruit_1',
+      x: 6, y: 13, dir: 0,
+      color: '#993355',
+      isTrainer: true, defeated: false,
+      trainerName: 'Malware Recruit',
+      team: [ generateWild('Bugbyte', 5) ],
+      reward: 80,
+      preBattleLines: [
+        'Halt! No one passes without proving their strength!',
+        'The Index controls everything. Do you even know what you depend on?',
+      ],
+      defeatScript: ['...Fine. Go ahead. But Team Malware will return.'],
+    },
+    {
+      id: 'malware_recruit_2',
+      x: 6, y: 5, dir: 0,
+      color: '#993355',
+      isTrainer: true, defeated: false,
+      trainerName: 'Malware Recruit',
+      team: [ generateWild('Bugbyte', 6), generateWild('Mousenet', 5) ],
+      reward: 90,
+      preBattleLines: [
+        'You beat my partner? Let\'s see if you can beat ME.',
+        'The Index controls everything. Do you even know what you depend on?',
+      ],
+      defeatScript: ['Impossible... retreating!'],
+    },
+    {
+      id: 'malware_analyst',
+      x: 6, y: 4, dir: 2,
+      color: '#552244',
+      script: [
+        'You defeated our Recruits? Impressive...',
+        'But this is only the beginning.',
+        'The Index will be ours. Team Malware sees all.',
+        "...I've said too much. Retreating!",
+      ],
+      onTalkEnd(npc) {
+        npc.hidden = true;
+        if (!SAVE.flags.malware_first_encounter) {
+          SAVE.flags.malware_first_encounter = true;
+          if (SAVE.starterChosen) { saveGame(); showNotif('GAME SAVED'); }
+        }
+      },
+    },
+  ],
+  encounterPool: [
+    { name: 'Bugbyte',   minLv: 5, maxLv: 7, weight: 25 },
+    { name: 'Mousenet',  minLv: 5, maxLv: 7, weight: 20 },
+    { name: 'Lockup',    minLv: 5, maxLv: 7, weight: 20 },
+    { name: 'Scoutgle',  minLv: 5, maxLv: 7, weight: 15 },
+    { name: 'Nullhound', minLv: 6, maxLv: 6, weight: 5  },
   ],
 };
 
@@ -3031,6 +3258,7 @@ function saveGame() {
       badges: SAVE.badges,
       items: SAVE.items,
       trainerDefeated: SAVE.trainerDefeated,
+      flags: SAVE.flags,
       party: PLAYER.party.map(p => {
         const o = Object.assign({}, p);
         o.revealedStats = [];
@@ -3056,6 +3284,13 @@ function loadGame() {
     SAVE.badges          = d.badges  || [];
     SAVE.items           = d.items   || {};
     SAVE.trainerDefeated = d.trainerDefeated || [];
+    SAVE.flags = Object.assign({
+      met_professor: false,
+      starter_chosen: false,
+      gym1_beaten: false,
+      malware_first_encounter: false,
+      rival_battle_1: false,
+    }, d.flags || {});
     PLAYER.party = (d.party || []).map(p =>
       Object.assign({}, p, { revealedStats: new Set() })
     );
@@ -3408,6 +3643,35 @@ const menuState = (function() {
 })();
 STATES.menu = menuState;
 
+// ── Index-instability glitch overlay ──────────────────────────
+let glitchTimer = 0;
+let glitchBars = [];
+function maybeTriggerGlitch() {
+  if (Math.random() < 0.0008) {
+    glitchTimer = 3;
+    const n = 2 + Math.floor(Math.random() * 2); // 2-3 bars
+    glitchBars = [];
+    for (let i = 0; i < n; i++) {
+      glitchBars.push({
+        y: Math.floor(Math.random() * H),
+        h: 2 + Math.floor(Math.random() * 5),
+        color: Math.random() < 0.5 ? PAL.ACCENT : PAL.T_VIRUS,
+      });
+    }
+  }
+}
+function renderGlitch() {
+  glitchBars.forEach(b => {
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = b.color;
+    ctx.fillRect(0, b.y, W, b.h);
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, b.y, W, 1);
+    ctx.globalAlpha = 1;
+  });
+}
+
 // ============================================================
 // GAME LOOP
 // ============================================================
@@ -3421,6 +3685,9 @@ function loop() {
     fr(0, 0, W, H, PAL.BG);
     drawTextC(`Unknown state: "${currentState}"`, H / 2, { color: PAL.TEXT_RED });
   }
+  // Index-instability glitch overlay
+  if (glitchTimer > 0) { renderGlitch(); glitchTimer--; }
+  else { maybeTriggerGlitch(); }
   // Global notification banner
   if (NOTIF.timer > 0) {
     NOTIF.timer--;
