@@ -1,0 +1,3455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOOGLIMON: The Index Crisis</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #000814;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+}
+
+#c {
+  width: 960px;
+  height: 640px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  border: 2px solid #003344;
+  box-shadow: 0 0 80px #00d4ff18, 0 0 200px #00aaff0a;
+  display: block;
+}
+
+#hint {
+  color: #002233;
+  font-size: 10px;
+  letter-spacing: 3px;
+  margin-top: 8px;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+@media (max-width: 980px) {
+  #c { width: 480px; height: 320px; }
+}
+
+#nameInput {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  width: 220px;
+  padding: 8px 12px;
+  background: #050d1a;
+  border: 2px solid #00d4ff;
+  color: #c8e8ff;
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  text-align: center;
+  outline: none;
+  display: none;
+  box-shadow: 0 0 16px #00d4ff44;
+}
+#nameInput::placeholder { color: #1a3a55; }
+#nameInput:focus { border-color: #f5c542; box-shadow: 0 0 20px #f5c54244; }
+</style>
+</head>
+<body>
+<canvas id="c" width="480" height="320"></canvas>
+<input id="nameInput" type="text" maxlength="10" placeholder="TRAINER NAME"
+  autocomplete="off" autocorrect="off" spellcheck="false" />
+<div id="hint">Z · Enter = Confirm &nbsp;|&nbsp; X · Esc = Back &nbsp;|&nbsp; Arrows = Move &nbsp;|&nbsp; F1 = Controls</div>
+
+<script>
+'use strict';
+
+// ============================================================
+// CANVAS + CORE CONFIG
+// ============================================================
+const cvs = document.getElementById('c');
+const ctx = cvs.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+const W   = 480;   // logical canvas width  (CSS doubles to 960)
+const H   = 320;   // logical canvas height (CSS doubles to 640)
+const TS  = 16;    // tile size in canvas pixels (= 32px on screen)
+const VW  = 30;    // viewport width  in tiles (30 × 16 = 480)
+const VH  = 13;    // viewport height in tiles (13 × 16 = 208)
+const UI_Y = VH * TS; // 208 — dividing line between map area and UI strip
+
+// ============================================================
+// COLOR PALETTE
+// ============================================================
+const PAL = {
+  // Void / backgrounds
+  BG:        '#050d1a',
+  VOID:      '#020509',
+  // Map tiles
+  PATH:      '#1c2a1c',
+  GRASS:     '#1a3a1a',
+  TALL:      '#0b4a0b',
+  WATER:     '#0a1a5a',
+  TREE:      '#0a2a0a',
+  WALL_BG:   '#1a1208',
+  DOOR_BG:   '#3a2800',
+  FLOOR:     '#1e1e2e',
+  GYM:       '#0d1e1e',
+  COUNTER:   '#2a1a08',
+  SIGN:      '#2a2000',
+  // UI panels
+  PANEL:     '#070e1a',
+  PANEL2:    '#0a1628',
+  BORDER:    '#005577',
+  BORDER2:   '#002233',
+  BORDER_HI: '#00aacc',
+  // Accent / highlight
+  ACCENT:    '#00d4ff',
+  ACCENT2:   '#0088bb',
+  GOLD:      '#f5c542',
+  // Text
+  TEXT:      '#c8e8ff',
+  TEXT_DIM:  '#3a5a77',
+  TEXT_DARK: '#1a2a3a',
+  TEXT_RED:  '#ff4455',
+  TEXT_YLW:  '#ffdd44',
+  // HP / EXP bars
+  HP_HI:     '#00ee77',
+  HP_MED:    '#ffdd00',
+  HP_LOW:    '#ff2244',
+  EXP:       '#0088ff',
+  // Status conditions
+  CORRUPTED: '#aa00ff',
+  LAGGED:    '#ffaa00',
+  CRASHED:   '#4488ff',
+  BURNED:    '#ff5500',
+  FROZEN:    '#88ddff',
+  // Type colors (14 types)
+  T_SEARCH:  '#f5c542',
+  T_BROWSER: '#4286f4',
+  T_CLOUD:   '#a0d8ef',
+  T_DATA:    '#9c27b0',
+  T_MEDIA:   '#e91e63',
+  T_AI:      '#8855cc',
+  T_SEC:     '#4caf50',
+  T_GAMING:  '#ff5722',
+  T_SOCIAL:  '#00bcd4',
+  T_HW:      '#8d6e63',
+  T_ELEC:    '#ffeb3b',
+  T_VIRUS:   '#76bc3a',
+  T_QUANT:   '#3f51b5',
+  T_COSMIC:  '#b0a0ff',
+};
+
+// Shorthand type→color lookup used throughout the game
+const TYPE_COL = {
+  Search:   PAL.T_SEARCH,  Browser:  PAL.T_BROWSER,
+  Cloud:    PAL.T_CLOUD,   Data:     PAL.T_DATA,
+  Media:    PAL.T_MEDIA,   AI:       PAL.T_AI,
+  Security: PAL.T_SEC,     Gaming:   PAL.T_GAMING,
+  Social:   PAL.T_SOCIAL,  Hardware: PAL.T_HW,
+  Electric: PAL.T_ELEC,    Virus:    PAL.T_VIRUS,
+  Quantum:  PAL.T_QUANT,   Cosmic:   PAL.T_COSMIC,
+};
+
+// ============================================================
+// SPRITE CACHE  (lazy-load PNGs, fall back to canvas primitives)
+// ============================================================
+const SPRITE_CACHE  = {};
+const SPRITE_FAILED = new Set();
+const NAME_INPUT = document.getElementById('nameInput');
+
+function loadSprite(key, src) {
+  if (SPRITE_CACHE[key] || SPRITE_FAILED.has(key)) return;
+  const img = new Image();
+  img.onload  = () => { SPRITE_CACHE[key] = img; };
+  img.onerror = () => { SPRITE_FAILED.add(key); };
+  img.src = src;
+}
+
+function getSprite(key) { return SPRITE_CACHE[key] || null; }
+
+// ============================================================
+// TILE SYSTEM
+// ============================================================
+const T = {
+  PATH:    0,   // walkable — dirt/stone path
+  GRASS:   1,   // walkable — short grass, no encounter
+  TALL:    2,   // walkable — tall grass, triggers wild encounter
+  WATER:   3,   // impassable
+  TREE:    4,   // impassable — tree canopy
+  WALL:    5,   // impassable — building exterior / rock face
+  DOOR:    6,   // walkable — triggers map transition
+  FLOOR:   7,   // walkable — indoor floor
+  COUNTER: 8,   // impassable — shop counter / desk
+  GYM:     9,   // walkable — gym floor tile
+  SIGN:    10,  // impassable — interactable sign post
+  PC:      11,  // impassable — PC terminal (interactable)
+  STAIR:   12,  // walkable — staircase
+  FLOWER:  13,  // walkable — decorative flowers (no encounter)
+  SAND:    14,  // walkable — sandy path
+};
+
+const WALKABLE = new Set([
+  T.PATH, T.GRASS, T.TALL, T.DOOR, T.FLOOR,
+  T.GYM, T.STAIR, T.FLOWER, T.SAND,
+]);
+const ENCOUNTER_TILES = new Set([T.TALL]);
+
+// Per-tile visual definition: { bg, detail, deco }
+const TILE_DEF = {
+  [T.PATH]:    { bg: '#1c2a1c', det: '#162216' },
+  [T.GRASS]:   { bg: '#1a3a1a', det: '#132813' },
+  [T.TALL]:    { bg: '#0b4a0b', det: '#083808' },
+  [T.WATER]:   { bg: '#0a1a5a', det: '#0a1270' },
+  [T.TREE]:    { bg: '#0a2a0a', det: '#1a4a1a' },
+  [T.WALL]:    { bg: '#1a1208', det: '#251a0a' },
+  [T.DOOR]:    { bg: '#3a2800', det: '#4a3800' },
+  [T.FLOOR]:   { bg: '#1e1e2e', det: '#181828' },
+  [T.COUNTER]: { bg: '#2a1a08', det: '#3a2a10' },
+  [T.GYM]:     { bg: '#0d1e1e', det: '#0a2828' },
+  [T.SIGN]:    { bg: '#2a2000', det: '#3a3000' },
+  [T.PC]:      { bg: '#001e3a', det: '#002a50' },
+  [T.STAIR]:   { bg: '#282818', det: '#383828' },
+  [T.FLOWER]:  { bg: '#1a3a1a', det: '#1a3a1a' },
+  [T.SAND]:    { bg: '#2a2210', det: '#322a18' },
+};
+
+// Draw one tile at canvas-pixel position (px, py)
+function drawTile(id, px, py, tick) {
+  const def = TILE_DEF[id] ?? TILE_DEF[T.PATH];
+  ctx.fillStyle = def.bg;
+  ctx.fillRect(px, py, TS, TS);
+
+  const d = def.det;
+
+  switch (id) {
+    case T.PATH: {
+      // Subtle cobblestone — alternating stone blocks
+      const pRow2 = (Math.floor(py / TS) + Math.floor(px / TS)) % 2;
+      ctx.fillStyle = pRow2 ? '#181e18' : '#161c16';
+      ctx.fillRect(px, py, TS, TS);
+      // Mortar lines
+      ctx.fillStyle = '#0e140e';
+      ctx.fillRect(px, py, TS, 1);
+      ctx.fillRect(px, py, 1, TS);
+      // Stone highlight
+      ctx.fillStyle = '#20281888';
+      ctx.fillRect(px + 1, py + 1, TS - 3, 1);
+      break;
+    }
+
+    case T.GRASS: {
+      // Base with slight variation based on position
+      const gVar = (Math.floor(px / TS) * 3 + Math.floor(py / TS) * 7) % 4;
+      ctx.fillStyle = ['#1a3a1a','#193818','#1b3c1b','#183619'][gVar];
+      ctx.fillRect(px, py, TS, TS);
+      // Short blades
+      ctx.fillStyle = d;
+      ctx.fillRect(px + 3,  py + 4, 1, 5);
+      ctx.fillRect(px + 7,  py + 3, 1, 6);
+      ctx.fillRect(px + 11, py + 5, 1, 4);
+      ctx.fillRect(px + 14, py + 2, 1, 7);
+      // Bright tips
+      ctx.fillStyle = '#226a22';
+      ctx.fillRect(px + 3,  py + 4, 1, 2);
+      ctx.fillRect(px + 7,  py + 3, 1, 2);
+      ctx.fillRect(px + 11, py + 5, 1, 2);
+      break;
+    }
+
+    case T.TALL:
+      // Blades + animated sway shimmer
+      ctx.fillStyle = d;
+      ctx.fillRect(px + 2,  py + 2,  2, 10);
+      ctx.fillRect(px + 6,  py + 1,  2, 12);
+      ctx.fillRect(px + 10, py + 2,  2, 11);
+      ctx.fillRect(px + 14, py + 3,  2,  9);
+      // Bright tips
+      ctx.fillStyle = '#1a6a1a';
+      ctx.fillRect(px + 2,  py + 2,  2, 2);
+      ctx.fillRect(px + 6,  py + 1,  2, 2);
+      ctx.fillRect(px + 10, py + 2,  2, 2);
+      ctx.fillRect(px + 14, py + 3,  2, 2);
+      // Subtle shimmer pulse every ~60 ticks
+      if (tick && Math.floor(tick / 40) % 3 === ((px / TS + py / TS) % 3)) {
+        ctx.fillStyle = '#00ee0022';
+        ctx.fillRect(px, py, TS, TS);
+      }
+      break;
+
+    case T.WATER: {
+      // Animated horizontal ripples
+      const wo = Math.floor((tick ?? 0) / 18) % 8;
+      ctx.fillStyle = '#0c1f7a';
+      ctx.fillRect(px + ((0 + wo) % TS), py + 4, 6, 2);
+      ctx.fillRect(px + ((8 + wo) % TS), py + 4, 6, 2);
+      ctx.fillRect(px + ((4 + wo) % TS), py + 11, 5, 2);
+      ctx.fillRect(px + ((12 + wo) % TS), py + 11, 5, 2);
+      // Glint
+      ctx.fillStyle = '#1a3aaa44';
+      ctx.fillRect(px + 1, py + 1, TS - 2, 2);
+      break;
+    }
+
+    case T.TREE:
+      // Layered canopy
+      ctx.fillStyle = '#1a4a1a';
+      ctx.fillRect(px + 1, py + 1, 14, 14);
+      ctx.fillStyle = '#226a22';
+      ctx.fillRect(px + 3, py + 3, 10, 8);
+      ctx.fillStyle = '#2a7a2a';
+      ctx.fillRect(px + 5, py + 5,  6, 5);
+      ctx.fillStyle = '#0a2a0a';
+      ctx.fillRect(px + 6, py + 0,  4, 3);  // treetop spike
+      break;
+
+    case T.WALL: {
+      // Dark stone base
+      ctx.fillStyle = '#14100a';
+      ctx.fillRect(px, py, TS, TS);
+      // Brick rows — offset by alternating row
+      const brickRow = Math.floor(py / TS) % 2;
+      const brickOff = brickRow ? 8 : 0;
+      ctx.fillStyle = '#1e1608';
+      // Two horizontal mortar lines at y=5 and y=11
+      ctx.fillRect(px, py + 5,  TS, 1);
+      ctx.fillRect(px, py + 11, TS, 1);
+      // Vertical mortar splits (per brick)
+      ctx.fillStyle = '#18120600';
+      for (let bxb = 0; bxb < TS; bxb += 8) {
+        const bx2 = (bxb + brickOff) % TS;
+        ctx.fillStyle = '#1c1408';
+        ctx.fillRect(px + bx2, py,     Math.min(7, TS - bx2), 5);
+        ctx.fillRect(px + bx2, py + 6, Math.min(7, TS - bx2), 5);
+        ctx.fillRect(px + bx2, py + 12,Math.min(7, TS - bx2), 4);
+      }
+      // Top-edge highlight
+      ctx.fillStyle = '#3a2a1444';
+      ctx.fillRect(px, py, TS, 2);
+      // Right-edge subtle shadow
+      ctx.fillStyle = '#0a080444';
+      ctx.fillRect(px + TS - 1, py, 1, TS);
+      break;
+    }
+
+    case T.DOOR: {
+      // Dark stone door frame
+      ctx.fillStyle = '#1a1208';
+      ctx.fillRect(px, py, TS, TS);
+      // Frame sides + top
+      ctx.fillStyle = '#3a2200';
+      ctx.fillRect(px + 1, py + 1, 2, TS - 1);   // left pillar
+      ctx.fillRect(px + TS - 3, py + 1, 2, TS - 1); // right pillar
+      ctx.fillRect(px + 1, py + 1, TS - 2, 3);   // top lintel
+      // Door panel (warm amber)
+      ctx.fillStyle = '#6b4500';
+      ctx.fillRect(px + 3, py + 4, TS - 6, TS - 5);
+      // Door wood grain
+      ctx.fillStyle = '#7a5010';
+      ctx.fillRect(px + 4, py + 5, 3, 8);
+      ctx.fillRect(px + 9, py + 5, 3, 8);
+      // Arched top cutout
+      ctx.fillStyle = '#3a2200';
+      ctx.fillRect(px + 4, py + 4, TS - 8, 3);
+      ctx.fillStyle = '#5a3800';
+      ctx.fillRect(px + 5, py + 4, TS - 10, 2);
+      // Handle (gold knob)
+      ctx.fillStyle = '#d4a017';
+      ctx.fillRect(px + 7, py + 9, 2, 2);
+      // Bottom threshold highlight
+      ctx.fillStyle = '#c8a040';
+      ctx.fillRect(px + 3, py + TS - 1, TS - 6, 1);
+      break;
+    }
+
+    case T.FLOOR:
+      // Subtle tile grid
+      ctx.fillStyle = d;
+      ctx.fillRect(px,          py,          TS, 1);
+      ctx.fillRect(px,          py,          1,  TS);
+      ctx.fillRect(px + TS - 1, py,          1,  TS);
+      ctx.fillRect(px,          py + TS - 1, TS, 1);
+      break;
+
+    case T.COUNTER:
+      ctx.fillStyle = '#4a3010';
+      ctx.fillRect(px + 1, py + 1, TS - 2, TS - 2);
+      ctx.fillStyle = '#6a4820';
+      ctx.fillRect(px + 2, py + 2, TS - 4, 4);
+      break;
+
+    case T.GYM: {
+      // Checkerboard teal pattern
+      const checker = (Math.floor(px / TS) + Math.floor(py / TS)) % 2 === 0;
+      ctx.fillStyle = checker ? '#0d2828' : '#0a1e1e';
+      ctx.fillRect(px, py, TS, TS);
+      ctx.fillStyle = '#00aaaa18';
+      ctx.fillRect(px, py, TS, 1);
+      ctx.fillRect(px, py, 1, TS);
+      break;
+    }
+
+    case T.SIGN:
+      ctx.fillStyle = '#4a3a00';
+      ctx.fillRect(px + 3,  py + 2,  10, 8);  // sign board
+      ctx.fillStyle = '#2a1a00';
+      ctx.fillRect(px + 7,  py + 10, 2,  6);  // post
+      ctx.fillStyle = '#6a5a00';
+      ctx.fillRect(px + 4,  py + 3,  8,  6);  // board face
+      break;
+
+    case T.PC:
+      ctx.fillStyle = '#002a4a';
+      ctx.fillRect(px + 2, py + 2, 12, 10);
+      ctx.fillStyle = PAL.ACCENT + '88';
+      ctx.fillRect(px + 3, py + 3, 10,  8);
+      // Blinking cursor
+      if (tick && Math.floor(tick / 30) % 2 === 0) {
+        ctx.fillStyle = PAL.ACCENT;
+        ctx.fillRect(px + 5, py + 5,  2,  4);
+      }
+      break;
+
+    case T.STAIR:
+      ctx.fillStyle = d;
+      for (let s = 0; s < 4; s++) {
+        ctx.fillRect(px + s * 3, py + s * 3, TS - s * 3, 3);
+      }
+      break;
+
+    case T.FLOWER:
+      ctx.fillStyle = '#1a3a1a';
+      ctx.fillRect(px, py, TS, TS);
+      // Small flowers
+      const flowerCols = ['#ff88aa', '#ffdd44', '#aa88ff'];
+      const fc = flowerCols[(Math.floor(px / TS) + Math.floor(py / TS)) % 3];
+      ctx.fillStyle = fc;
+      ctx.fillRect(px + 2,  py + 3,  2, 2);
+      ctx.fillRect(px + 8,  py + 7,  2, 2);
+      ctx.fillRect(px + 12, py + 2,  2, 2);
+      ctx.fillStyle = '#ffff88';
+      ctx.fillRect(px + 3,  py + 4,  1, 1);
+      ctx.fillRect(px + 9,  py + 8,  1, 1);
+      ctx.fillRect(px + 13, py + 3,  1, 1);
+      break;
+
+    case T.SAND:
+      ctx.fillStyle = d;
+      ctx.fillRect(px + 1,  py + 5,  2, 1);
+      ctx.fillRect(px + 6,  py + 10, 3, 1);
+      ctx.fillRect(px + 11, py + 3,  2, 1);
+      break;
+  }
+}
+
+// ============================================================
+// INPUT SYSTEM
+// ============================================================
+const KEYS = {};
+const JUST = {};  // keys pressed this frame
+
+document.addEventListener('keydown', e => {
+  if (!KEYS[e.code]) JUST[e.code] = true;
+  KEYS[e.code] = true;
+  // Prevent browser scrolling on arrow keys / space
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) {
+    e.preventDefault();
+  }
+});
+document.addEventListener('keyup', e => { KEYS[e.code] = false; });
+
+// Returns true once per press (consumed)
+function pressed(code) {
+  if (JUST[code]) { delete JUST[code]; return true; }
+  return false;
+}
+function held(code) { return !!KEYS[code]; }
+
+// Semantic helpers
+function inputConfirm() { return pressed('KeyZ')  || pressed('Enter'); }
+function inputCancel()  { return pressed('KeyX')  || pressed('Escape'); }
+function inputMenu()    { return pressed('KeyM')  || pressed('KeyI'); }
+function inputDex()     { return pressed('KeyD'); }
+
+// Directional input (held — for smooth movement)
+function inputDir() {
+  if (held('ArrowUp'))    return 0;
+  if (held('ArrowRight')) return 1;
+  if (held('ArrowDown'))  return 2;
+  if (held('ArrowLeft'))  return 3;
+  return -1;
+}
+
+// Any key just pressed this frame
+function anyKey() {
+  const k = Object.keys(JUST);
+  if (k.length) { k.forEach(c => delete JUST[c]); return true; }
+  return false;
+}
+
+// Flush all pending inputs
+function flushInput() {
+  Object.keys(JUST).forEach(k => delete JUST[k]);
+}
+
+// ============================================================
+// DRAW UTILITIES
+// ============================================================
+
+// Solid rectangle
+function fr(x, y, w, h, col) {
+  ctx.fillStyle = col;
+  ctx.fillRect(x, y, w, h);
+}
+
+// Outlined rectangle (1-px inset so it aligns on pixels)
+function sr(x, y, w, h, col, lw = 1) {
+  ctx.strokeStyle = col;
+  ctx.lineWidth = lw;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+}
+
+// Draw a UI panel: filled bg with double border
+function drawPanel(x, y, w, h, {
+  bg     = PAL.PANEL,
+  outer  = PAL.BORDER2,
+  inner  = PAL.BORDER,
+} = {}) {
+  fr(x, y, w, h, bg);
+  // outer edge (dark)
+  fr(x,         y,         w, 1, outer);
+  fr(x,         y + h - 1, w, 1, outer);
+  fr(x,         y,         1, h, outer);
+  fr(x + w - 1, y,         1, h, outer);
+  // inner highlight
+  fr(x + 1,     y + 1,     w - 2, 1, inner);
+  fr(x + 1,     y + h - 2, w - 2, 1, inner);
+  fr(x + 1,     y + 1,     1, h - 2, inner);
+  fr(x + w - 2, y + 1,     1, h - 2, inner);
+}
+
+// Draw pixel-style text using Courier New (monospace = consistent widths)
+function drawText(str, x, y, {
+  color  = PAL.TEXT,
+  size   = 8,
+  align  = 'left',
+  shadow = true,
+  alpha  = 1,
+} = {}) {
+  ctx.globalAlpha = alpha;
+  ctx.font        = `${size}px 'Courier New', monospace`;
+  ctx.textAlign   = align;
+  ctx.textBaseline = 'top';
+  if (shadow) {
+    ctx.fillStyle = '#000000dd';
+    ctx.fillText(str, x + 1, y + 1);
+  }
+  ctx.fillStyle = color;
+  ctx.fillText(str, x, y);
+  ctx.globalAlpha = 1;
+}
+
+function drawTextC(str, y, opts = {}) {
+  drawText(str, W / 2, y, { align: 'center', ...opts });
+}
+
+// HP/EXP bar
+function drawBar(x, y, w, h, ratio, hiCol, bg = '#111122') {
+  fr(x, y, w, h, bg);
+  fr(x + 1, y + 1, Math.max(0, Math.floor((w - 2) * Math.min(1, ratio))), h - 2, hiCol);
+  sr(x, y, w, h, PAL.BORDER2);
+}
+
+function drawHPBar(x, y, w, h, cur, max) {
+  const r = Math.max(0, cur / max);
+  const col = r > 0.5 ? PAL.HP_HI : r > 0.25 ? PAL.HP_MED : PAL.HP_LOW;
+  drawBar(x, y, w, h, r, col);
+}
+
+// Small type badge  (e.g. [SEARCH])
+function drawTypeBadge(type, x, y) {
+  const col = TYPE_COL[type] ?? PAL.TEXT_DIM;
+  const w = 36, h = 10;
+  fr(x, y, w, h, col + '33');
+  sr(x, y, w, h, col);
+  drawText(type.toUpperCase().slice(0, 6), x + w / 2, y + 1, {
+    color: col, size: 6, align: 'center',
+  });
+}
+
+// ============================================================
+// BLINK / TIMING HELPERS
+// ============================================================
+let G_TICK = 0;   // global frame counter, incremented each loop
+
+function blink(period = 30) {
+  return Math.floor(G_TICK / period) % 2 === 0;
+}
+
+// ============================================================
+// STATE MACHINE
+// ============================================================
+let currentState = null;
+
+const STATES = {};  // populated below
+
+function setState(name, enterArg) {
+  if (currentState && STATES[currentState]?.exit) {
+    STATES[currentState].exit();
+  }
+  currentState = name;
+  flushInput();
+  if (STATES[name]?.enter) STATES[name].enter(enterArg);
+}
+
+// ============================================================
+// STATE: TITLE SCREEN
+// ============================================================
+const TYPE_NAMES = Object.keys(TYPE_COL);
+const TYPE_COLS  = Object.values(TYPE_COL);
+
+const titleState = (() => {
+  let tick = 0;
+  let logoY = -80;
+  let titlePhase = 'main'; // 'main' | 'name_entry'
+  let menuCursor = 0;      // 0=CONTINUE or START, 1=NEW GAME (when save exists)
+  const LOGO_REST = 38;
+  const LOGO_LETTERS = 'GOOGLIMON';
+
+  // Floating data-stream particles
+  const PARTICLES = [];
+  function spawnParticle() {
+    return {
+      x:     Math.random() * W,
+      y:     Math.random() * H,
+      size:  1 + (Math.random() < 0.3 ? 1 : 0),
+      speed: 0.15 + Math.random() * 0.4,
+      col:   TYPE_COLS[Math.floor(Math.random() * TYPE_COLS.length)],
+      phase: Math.random() * Math.PI * 2,
+      alpha: 0.08 + Math.random() * 0.25,
+    };
+  }
+
+  // Hex grid backdrop cells
+  const CELLS = [];
+  function buildCells() {
+    CELLS.length = 0;
+    for (let cy = 0; cy < H; cy += 20) {
+      for (let cx = 0; cx < W; cx += 20) {
+        if (Math.random() < 0.18) {
+          CELLS.push({ x: cx, y: cy, col: TYPE_COLS[Math.floor(Math.random() * TYPE_COLS.length)], life: Math.random() * 200 });
+        }
+      }
+    }
+  }
+
+  function enter() {
+    tick = 0;
+    logoY = -80;
+    titlePhase = 'main';
+    menuCursor = 0;
+    loadGame();
+    PARTICLES.length = 0;
+    for (let i = 0; i < 50; i++) PARTICLES.push(spawnParticle());
+    buildCells();
+    NAME_INPUT.style.display = 'none';
+  }
+
+  function startNew() {
+    // Reset save to fresh state
+    SAVE.playerName = '';
+    SAVE.starterChosen = false;
+    SAVE.dex = {};
+    SAVE.credits = 500;
+    SAVE.badges = [];
+    SAVE.items = {};
+    SAVE.trainerDefeated = [];
+    PLAYER.party = [];
+    PLAYER.mapId = 'cache_town';
+    PLAYER.x = 10; PLAYER.y = 7; PLAYER.dir = 2;
+    localStorage.removeItem('googlimon_v1');
+    // Show name input
+    titlePhase = 'name_entry';
+    NAME_INPUT.value = '';
+    NAME_INPUT.style.display = 'block';
+    NAME_INPUT.focus();
+  }
+
+  function confirmName() {
+    const raw = NAME_INPUT.value.trim().toUpperCase() || 'PLAYER';
+    SAVE.playerName = raw.slice(0, 10);
+    NAME_INPUT.style.display = 'none';
+    titlePhase = 'main';
+    setState('overworld', 'cache_town');
+  }
+
+  function update() {
+    tick++;
+
+    // Logo drop-in
+    if (logoY < LOGO_REST) {
+      logoY += (LOGO_REST - logoY) * 0.14 + 1;
+      if (logoY >= LOGO_REST) logoY = LOGO_REST;
+    }
+
+    // Particles
+    for (const p of PARTICLES) {
+      p.y -= p.speed;
+      p.alpha = (0.08 + Math.abs(Math.sin(tick * 0.018 + p.phase)) * 0.22);
+      if (p.y < -4) { Object.assign(p, spawnParticle()); p.y = H + 4; }
+    }
+
+    // Cells
+    for (const c of CELLS) {
+      c.life--;
+      if (c.life <= 0) {
+        c.x = Math.random() * W; c.y = Math.random() * H;
+        c.col = TYPE_COLS[Math.floor(Math.random() * TYPE_COLS.length)];
+        c.life = 80 + Math.random() * 200;
+      }
+    }
+
+    if (titlePhase === 'name_entry') {
+      // Enter key or Z confirms the name
+      if (pressed('Enter') || pressed('KeyZ')) { confirmName(); return; }
+      return; // hand control to the HTML input
+    }
+
+    if (tick <= 60) return;
+
+    const hasSave = SAVE.starterChosen;
+    const opts = hasSave ? 2 : 1; // CONTINUE + NEW GAME, or just START
+    if (pressed('ArrowUp'))   menuCursor = (menuCursor + opts - 1) % opts;
+    if (pressed('ArrowDown')) menuCursor = (menuCursor + 1) % opts;
+
+    if (inputConfirm()) {
+      if (!hasSave || menuCursor === 0) {
+        // CONTINUE (save exists) or START (no save)
+        if (hasSave) {
+          setState('overworld', PLAYER.mapId);
+        } else {
+          startNew();
+        }
+      } else {
+        // NEW GAME
+        startNew();
+      }
+    }
+  }
+
+  function render() {
+    // ── Background ─────────────────────────────────────────
+    fr(0, 0, W, H, PAL.BG);
+
+    // Faint grid squares
+    for (const c of CELLS) {
+      const a = Math.min(0.12, (200 - c.life) / 200 * 0.12) + Math.sin(tick * 0.03 + c.x) * 0.03;
+      ctx.globalAlpha = Math.max(0, a);
+      fr(c.x, c.y, 18, 18, c.col);
+      ctx.globalAlpha = 1;
+    }
+
+    // Particles
+    for (const p of PARTICLES) {
+      ctx.globalAlpha = p.alpha;
+      fr(p.x | 0, p.y | 0, p.size, p.size, p.col);
+    }
+    ctx.globalAlpha = 1;
+
+    // Scan-line overlay
+    ctx.fillStyle = '#00000018';
+    for (let sy = 0; sy < H; sy += 3) ctx.fillRect(0, sy, W, 1);
+
+    // Top + bottom rainbow bar
+    for (let i = 0; i < TYPE_NAMES.length; i++) {
+      const bw = W / TYPE_NAMES.length;
+      ctx.globalAlpha = 0.55;
+      fr(i * bw, 0,     bw, 3, TYPE_COL[TYPE_NAMES[i]]);
+      fr(i * bw, H - 3, bw, 3, TYPE_COL[TYPE_NAMES[i]]);
+    }
+    ctx.globalAlpha = 1;
+
+    // ── "THE INDEX CRISIS" above logo ───────────────────────
+    if (logoY > 0) {
+      const subAlpha = Math.min(1, (logoY - 0) / LOGO_REST);
+      drawTextC('THE  INDEX  CRISIS', logoY - 14, {
+        color: PAL.ACCENT, size: 7, shadow: true, alpha: subAlpha * 0.9,
+      });
+    }
+
+    // ── GOOGLIMON logo ──────────────────────────────────────
+    {
+      const lw = 26;
+      const startX = W / 2 - (LOGO_LETTERS.length * lw) / 2 + lw / 2;
+      ctx.font = "bold 22px 'Courier New', monospace";
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+
+      for (let i = 0; i < LOGO_LETTERS.length; i++) {
+        const lx = startX + i * lw;
+        const ly = logoY + Math.sin(tick * 0.045 + i * 0.55) * 2.5;
+        const col = TYPE_COLS[i % TYPE_COLS.length];
+
+        // Drop shadow
+        ctx.fillStyle = '#000000bb';
+        ctx.fillText(LOGO_LETTERS[i], lx + 2, ly + 2);
+
+        // Glow halo
+        ctx.shadowColor  = col;
+        ctx.shadowBlur   = 12;
+        ctx.fillStyle    = col;
+        ctx.fillText(LOGO_LETTERS[i], lx, ly);
+        ctx.shadowBlur   = 0;
+      }
+    }
+
+    // ── Tagline ─────────────────────────────────────────────
+    if (tick > 35) {
+      const ta = Math.min(1, (tick - 35) / 30);
+      const ty = LOGO_REST + 44;
+      fr(W / 2 - 90, ty - 5, 180, 1, PAL.BORDER + '66');
+      drawTextC('A  Monster-Collecting  RPG', ty, {
+        color: PAL.TEXT_DIM, size: 7, alpha: ta,
+      });
+      fr(W / 2 - 90, ty + 13, 180, 1, PAL.BORDER + '66');
+    }
+
+    // ── Menu options / Name Entry ─────────────────────────
+    if (titlePhase === 'name_entry') {
+      fr(W/2-130, H-80, 260, 44, '#050d1a');
+      sr(W/2-130, H-80, 260, 44, PAL.GOLD, 2);
+      drawTextC('ENTER YOUR TRAINER NAME', H-74, { color: PAL.GOLD, size: 8, shadow: true });
+      drawTextC('then press  ENTER  to confirm', H-61, { color: PAL.TEXT_DIM, size: 6 });
+    } else if (tick > 80) {
+      const hasSave = SAVE.starterChosen;
+      if (hasSave) {
+        const opts = ['▶  CONTINUE', '   NEW GAME'];
+        const boxW = 200, boxH = 70, boxX = W/2 - boxW/2, boxY = H - 105;
+        fr(boxX, boxY, boxW, boxH, '#050d1a');
+        sr(boxX, boxY, boxW, boxH, PAL.ACCENT, 2);
+        if (SAVE.playerName) {
+          drawTextC(`Trainer: ${SAVE.playerName}`, boxY + 6, { color: PAL.TEXT_DIM, size: 7 });
+        }
+        opts.forEach((opt, i) => {
+          const sel = menuCursor === i;
+          const oy = boxY + 22 + i * 20;
+          drawTextC(opt, oy, { color: sel ? PAL.GOLD : PAL.TEXT_DIM, size: 9, shadow: true });
+        });
+      } else {
+        if (blink(38)) {
+          drawTextC('—  PRESS  Z  TO  START  —', H - 70, { color: PAL.ACCENT, size: 9, shadow: true });
+        }
+      }
+    }
+
+    // ── Type badges row ──────────────────────────────────────
+    if (tick > 50) {
+      const badgeAlpha = Math.min(1, (tick - 50) / 40);
+      ctx.globalAlpha = badgeAlpha * 0.7;
+      const bw = 34, totalBW = TYPE_NAMES.length * (bw + 2);
+      const bStartX = (W - totalBW) / 2;
+      for (let i = 0; i < TYPE_NAMES.length; i++) {
+        const col = TYPE_COL[TYPE_NAMES[i]];
+        fr(bStartX + i * (bw + 2), H - 24, bw, 10, col + '33');
+        sr(bStartX + i * (bw + 2), H - 24, bw, 10, col);
+        ctx.fillStyle = col;
+        ctx.font = "5px 'Courier New', monospace";
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(TYPE_NAMES[i].toUpperCase().slice(0, 5),
+          bStartX + i * (bw + 2) + bw / 2, H - 23);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // ── Version footer ──────────────────────────────────────
+    drawText('v0.1',  4,      H - 12, { color: PAL.TEXT_DARK, size: 6 });
+    drawText('F1 — Controls', W/2, H - 12, { color: PAL.TEXT_DARK, size: 6, align: 'center' });
+    drawText('GOOGLIA REGION', W - 4, H - 12, { color: PAL.TEXT_DARK, size: 6, align: 'right' });
+  }
+
+  function exit() {
+    NAME_INPUT.style.display = 'none';
+    titlePhase = 'main';
+  }
+
+  return { enter, update, render, exit };
+})();
+
+STATES.title = titleState;
+
+// ============================================================
+// STATE: ENGINE DEMO  (tile renderer showcase, Part 1 only)
+//   Replaces 'overworld' until Part 2 adds real maps.
+// ============================================================
+const demoState = (() => {
+  let tick = 0;
+  const DEMO_ORDER = [
+    T.PATH, T.GRASS, T.TALL, T.WATER, T.TREE, T.WALL,
+    T.DOOR, T.FLOOR, T.COUNTER, T.GYM, T.SIGN, T.PC,
+    T.STAIR, T.FLOWER, T.SAND,
+  ];
+  const DEMO_NAMES = [
+    'PATH','GRASS','TALL GRASS','WATER','TREE','WALL',
+    'DOOR','FLOOR','COUNTER','GYM','SIGN','PC',
+    'STAIR','FLOWER','SAND',
+  ];
+
+  // Sample map for the demo — shows what the tile renderer produces
+  // 30 wide × 13 tall = fills the full viewport
+  const DEMO_MAP = [
+    // row 0
+    [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+    // row 1 — outside path + trees
+    [5,0,0,0,0,1,1,2,2,2,1,0,0,0,0,0,7,7,7,7,7,0,0,0,0,0,0,0,0,5],
+    // row 2
+    [5,0,4,4,0,1,1,2,2,2,1,0,0,7,7,7,7,8,8,7,7,0,4,4,4,0,0,0,0,5],
+    // row 3
+    [5,0,4,4,0,1,2,2,3,2,1,0,0,7,7,7,7,8,8,7,7,0,4,4,4,0,0,0,0,5],
+    // row 4
+    [5,0,0,0,0,1,2,3,3,3,1,0,0,7,7,11,7,7,7,7,7,0,0,0,0,0,0,0,0,5],
+    // row 5
+    [5,0,0,0,0,1,1,2,3,2,1,0,0,7,6,7,7,7,7,7,7,0,0,0,0,0,0,0,0,5],
+    // row 6 — gym + path
+    [5,0,0,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5],
+    // row 7
+    [5,9,9,9,9,9,9,9,9,9,9,9,9,0,0,13,13,0,0,0,0,0,0,0,0,0,0,0,0,5],
+    // row 8
+    [5,9,9,9,9,9,9,9,9,9,9,9,9,0,0,13,13,0,14,14,14,14,14,14,0,0,0,0,0,5],
+    // row 9
+    [5,9,9,9,9,9,9,9,9,9,9,9,9,0,0,0,0,0,14,14,14,14,14,14,0,0,0,0,0,5],
+    // row 10
+    [5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5],
+    // row 11 — bottom border of trees
+    [5,4,4,4,4,0,0,0,0,0,0,4,4,4,4,4,4,0,0,0,0,4,4,4,4,4,4,0,0,5],
+    // row 12
+    [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+  ];
+
+  // Animate a fake "player" walking across the demo map
+  const fakePlayer = { x: 1, y: 6, tx: 0, ty: 0, timer: 0, dir: 1 };
+  const FAKE_PATH  = [[1,6],[2,6],[3,6],[4,6],[5,6],[6,6],[7,6],[8,6],[9,6],[8,6],[7,6],[6,6],[5,6],[4,6],[3,6],[2,6]];
+  let fpStep = 0;
+
+  function enter() { tick = 0; fpStep = 0; }
+
+  function update() {
+    tick++;
+    // Move fake player along path every 24 frames
+    if (tick % 24 === 0) {
+      fpStep = (fpStep + 1) % FAKE_PATH.length;
+      fakePlayer.x = FAKE_PATH[fpStep][0];
+      fakePlayer.y = FAKE_PATH[fpStep][1];
+    }
+
+    if (inputCancel() || inputConfirm()) setState('title');
+  }
+
+  function render() {
+    // ── Draw demo tile map ───────────────────────────────────
+    for (let ty = 0; ty < VH; ty++) {
+      const row = DEMO_MAP[ty];
+      if (!row) continue;
+      for (let tx = 0; tx < VW; tx++) {
+        drawTile(row[tx] ?? T.PATH, tx * TS, ty * TS, tick);
+      }
+    }
+
+    // ── Fake player sprite ───────────────────────────────────
+    {
+      const px = fakePlayer.x * TS, py = fakePlayer.y * TS;
+      // Shadow
+      ctx.fillStyle = '#00000044';
+      ctx.beginPath();
+      ctx.ellipse(px + 8, py + 15, 5, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Body
+      fr(px + 4, py + 8, 8, 8, '#4488cc');  // shirt
+      // Head
+      fr(px + 4, py + 1, 8, 7, '#ffcc88');  // skin
+      // Eyes (direction-aware: facing right)
+      fr(px + 9, py + 3, 1, 1, '#222');
+      // Legs (walk cycle)
+      const legOff = Math.floor(tick / 8) % 2;
+      fr(px + 4, py + 15, 3, 2, '#334477');
+      fr(px + 9, py + 15 + (legOff ? 1 : -1), 3, 2, '#334477');
+    }
+
+    // ── Tile legend (bottom strip) ───────────────────────────
+    const LEGEND_X = 4, LEGEND_Y = 28;
+    const scrollOffset = Math.floor(tick / 120) % Math.ceil(DEMO_ORDER.length / 5);
+    const startIdx = scrollOffset * 5;
+
+    for (let i = 0; i < 5 && startIdx + i < DEMO_ORDER.length; i++) {
+      const tid  = DEMO_ORDER[startIdx + i];
+      const name = DEMO_NAMES[startIdx + i];
+      const lx = LEGEND_X + i * 58;
+
+      // Mini tile swatch
+      drawTile(tid, lx, LEGEND_Y, tick);
+      fr(lx, LEGEND_Y, TS, TS, '#00000055');  // dim overlay for readability
+      sr(lx, LEGEND_Y, TS, TS, PAL.BORDER2);
+
+      // Tile name
+      drawText(name, lx, LEGEND_Y + 18, { color: PAL.TEXT_DIM, size: 6 });
+    }
+
+    // Scroll indicator
+    drawText(`${scrollOffset + 1}/${Math.ceil(DEMO_ORDER.length / 5)}`,
+      W - 6, LEGEND_Y, { color: PAL.TEXT_DIM, size: 6, align: 'right' });
+
+    // ── UI Panel ─────────────────────────────────────────────
+    drawPanel(0, UI_Y, W, H - UI_Y);
+
+    // Header
+    drawText('TILE RENDERER  +  ENGINE  DEMO', 10, UI_Y + 8, {
+      color: PAL.ACCENT, size: 8,
+    });
+    fr(10, UI_Y + 19, W - 20, 1, PAL.BORDER + '55');
+
+    // Sample HP bar
+    drawText('HP', 10, UI_Y + 26, { color: PAL.TEXT_DIM, size: 7 });
+    drawHPBar(30, UI_Y + 26, 120, 9, 68, 100);
+    drawText('68 / 100', 156, UI_Y + 26, { color: PAL.TEXT, size: 7 });
+
+    // Sample EXP bar
+    drawText('EX', 10, UI_Y + 38, { color: PAL.TEXT_DIM, size: 7 });
+    drawBar(30, UI_Y + 38, 120, 6, 0.42, PAL.EXP);
+    drawText('EXP to next level', 156, UI_Y + 38, { color: PAL.TEXT_DIM, size: 6 });
+
+    // Panel menu stub
+    const MENU_X = 10, MENU_Y = UI_Y + 52;
+    drawText('>', MENU_X,      MENU_Y,      { color: PAL.ACCENT, size: 8 });
+    drawText('FIGHT',          MENU_X + 12, MENU_Y,      { color: PAL.TEXT, size: 8 });
+    drawText('CACHE BALL',     MENU_X + 80, MENU_Y,      { color: PAL.TEXT, size: 8 });
+    drawText('SWITCH',         MENU_X + 12, MENU_Y + 14, { color: PAL.TEXT_DIM, size: 8 });
+    drawText('RUN',            MENU_X + 80, MENU_Y + 14, { color: PAL.TEXT_DIM, size: 8 });
+
+    // Sample type badges
+    let bx = 220;
+    for (let i = 0; i < 7 && i < TYPE_NAMES.length; i++) {
+      drawTypeBadge(TYPE_NAMES[(i + Math.floor(tick / 90)) % TYPE_NAMES.length], bx, UI_Y + 52 + Math.floor(i / 7) * 14);
+      bx += 38;
+    }
+
+    // Back hint
+    drawTextC('[ X · ESC  →  Title Screen ]', H - 10, { color: PAL.TEXT_DARK, size: 6 });
+  }
+
+  return { enter, update, render };
+})();
+
+STATES.demo = demoState;
+
+// ============================================================
+// PART 2 — OVERWORLD MAPS
+// ============================================================
+
+// ── Map Data ────────────────────────────────────────────────
+// W=tile width, H_=tile height (H is taken by canvas height)
+const MAPS = {};
+
+// Helper to build a flat row string into tile arrays
+function mkRow(str) {
+  return str.split('').map(c => {
+    switch(c) {
+      case '.': return T.PATH;
+      case 'g': return T.GRASS;
+      case 'G': return T.TALL;
+      case 'W': return T.WALL;
+      case 'B': return T.WALL;   // building facade (solid)
+      case 'D': return T.DOOR;
+      case 'F': return T.FLOOR;
+      case 'C': return T.COUNTER;
+      case 'T': return T.TREE;
+      case '~': return T.WATER;
+      case 'f': return T.FLOWER;
+      default:  return T.PATH;
+    }
+  });
+}
+
+// Cache Town — 20 cols × 15 rows
+MAPS.cache_town = {
+  name: 'Cache Town',
+  w: 20, h: 15,
+  tiles: [
+    // row 0 — top border trees / wall
+    mkRow('TTTTTTTTTTTTTTTTTTTT'),
+    // row 1
+    mkRow('T..................T'),
+    // row 2 — lab building (cols 8-13)
+    mkRow('T.......BBBBBB.....T'),
+    // row 3 — lab walls with door at col 10
+    mkRow('T.......B....B.....T'),
+    // row 4 — lab door row
+    mkRow('T.......B..DB......T'),
+    // row 5 — path in front of lab
+    mkRow('T......ggg..ggg....T'),
+    // row 6 — grass transition
+    mkRow('T....gGGG....GGGg..T'),
+    // row 7 — main path (player starts col 10, row 7)
+    mkRow('T....g.......g.....T'),
+    // row 8
+    mkRow('T....GGg...gGGg....T'),
+    // row 9
+    mkRow('T.......g.g........T'),
+    // row 10 — town path / sign area
+    mkRow('T..f.....f.....f...T'),
+    // row 11
+    mkRow('T..................T'),
+    // row 12 — bottom grass strip
+    mkRow('TggGGGggGGGggGGGggGT'),
+    // row 13 — tall grass row (Route 1 entry)
+    mkRow('TGGGGGGGGGGGGGGGGGg'),
+    // row 14 — south edge (gap at col 9 leads to Route 1)
+    mkRow('TTTTTTTTT..TTTTTTTTT'),
+  ],
+  exits: [
+    { x: 11, y: 4,  toMap: 'lab_interior', toX: 5, toY: 7 },
+    { x: 9,  y: 14, toMap: 'route1',        toX: 9, toY: 23 },
+    { x: 10, y: 14, toMap: 'route1',        toX: 10, toY: 23 },
+  ],
+  playerStart: { x: 10, y: 7 },
+  npcs: [
+    {
+      id: 'mom',
+      x: 6, y: 7, dir: 1,
+      color: '#ff88cc',
+      script: ['Welcome home, dear!', 'Dont wander into the tall grass alone!']
+    },
+    {
+      id: 'oldman',
+      x: 15, y: 10, dir: 2,
+      color: '#aabbcc',
+      script: ['They say Route 1 is filled with wild Googlimon!', 'The Professor can help you get started.']
+    }
+  ]
+};
+
+// Lab Interior — 12 cols × 10 rows
+MAPS.lab_interior = {
+  name: "Professor Search's Lab",
+  w: 12, h: 10,
+  tiles: [
+    // row 0 — top wall
+    mkRow('WWWWWWWWWWWW'),
+    // row 1 — counter row
+    mkRow('WCCCCCCCCCCW'),
+    // row 2 — open floor with PC on east wall
+    mkRow('WFF.......FW'),
+    // row 3 — pedestals at cols 3, 5, 7
+    mkRow('WFFFFFFFFFFFF'),   // overridden per-cell below
+    // row 4
+    mkRow('WFFFFFFFFFFFF'),
+    // row 5 — open floor
+    mkRow('WFFFFFFFFFFFF'),
+    // row 6
+    mkRow('WFFFFFFFFFFFF'),
+    // row 7
+    mkRow('WFFFFFFFFFFFF'),
+    // row 8 — door row (col 5)
+    mkRow('WFFFF.FFFFFFW'),
+    // row 9 — south wall
+    mkRow('WWWWWWWWWWWW'),
+  ],
+  // Fix: rebuild tiles properly
+  exits: [
+    { x: 5, y: 8, toMap: 'cache_town', toX: 11, toY: 5 }
+  ],
+  playerStart: { x: 5, y: 7 },
+  // Pedestal positions for starter Googlimon
+  pedestals: [
+    { x: 3, y: 4, label: 'Querycub' },
+    { x: 5, y: 4, label: 'Puffbit'  },
+    { x: 7, y: 4, label: 'Thinklet' }
+  ],
+  npcs: [
+    {
+      id: 'prof_search',
+      x: 5, y: 2, dir: 2,
+      color: '#ffffaa',
+      script: [
+        'Ah, you\'ve arrived!',
+        'I am Professor Search.',
+        'These three Googlimon need a trainer.',
+        'Choose one — your journey begins today!'
+      ]
+    }
+  ]
+};
+
+// Fix lab tiles manually (mkRow length bug guard)
+(function fixLabTiles() {
+  const m = MAPS.lab_interior;
+  // Rebuild all rows cleanly
+  const rows = [
+    'WWWWWWWWWWWW',
+    'WCCCCCCCCCCW',
+    'WFF.......FW',
+    'WFFFFFFFFFFF',
+    'WFF.F.F.FFFW',
+    'WFFFFFFFFFFF',
+    'WFFFFFFFFFFF',
+    'WFFFFFFFFFFF',
+    'WFFFFF.FFFFW',
+    'WWWWWWWWWWWW',
+  ];
+  m.tiles = rows.map(r => mkRow(r.padEnd(m.w, 'F').slice(0, m.w)));
+  // Door tile
+  m.tiles[8][5] = T.DOOR;
+  // Pedestal markers stored in m.pedestals — drawn as special tiles
+})();
+
+// ── Player Object ────────────────────────────────────────────
+const PLAYER = {
+  x: 10, y: 7,
+  dir: 2,          // 0=up 1=right 2=down 3=left
+  mapId: 'cache_town',
+  stepTimer: 0,
+  animFrame: 0,
+};
+
+const STEP_FRAMES = 10;  // frames per tile step
+
+// ── Camera ───────────────────────────────────────────────────
+function getCam(map) {
+  const cx = PLAYER.x * TS - (VW * TS) / 2 + TS / 2;
+  const cy = PLAYER.y * TS - (VH * TS) / 2 + TS / 2;
+  const maxX = map.w * TS - VW * TS;
+  const maxY = map.h * TS - VH * TS;
+  return {
+    x: Math.max(0, Math.min(cx, maxX)),
+    y: Math.max(0, Math.min(cy, maxY))
+  };
+}
+
+// ── NPC State ────────────────────────────────────────────────
+let npcDialogue = null;  // { lines:[], idx:0 } when active
+
+// ── Sprite Drawers ───────────────────────────────────────────
+function drawPlayer(px, py, dir, frame) {
+  const x = Math.floor(px);
+  const y = Math.floor(py);
+  const bob = (frame % 2 === 0) ? 0 : 1;
+
+  // Shadow
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(x + 8, y + 15 + bob, 5, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Legs (bob)
+  ctx.fillStyle = '#226699';
+  if (dir === 0) {
+    fr(x+5, y+10+bob, 3, 5, '#226699');
+    fr(x+9, y+10+bob, 3, 5, '#226699');
+  } else if (dir === 2) {
+    fr(x+5, y+10+bob, 3, 5, '#226699');
+    fr(x+9, y+10+bob, 3, 5, '#226699');
+  } else if (dir === 1) {
+    fr(x+6, y+10, 3, 5, '#226699');
+    fr(x+9, y+10+bob, 3, 5, '#226699');
+  } else {
+    fr(x+5, y+10+bob, 3, 5, '#226699');
+    fr(x+8, y+10, 3, 5, '#226699');
+  }
+
+  // Body
+  fr(x+4, y+5, 9, 7, PAL.ACCENT);   // teal shirt
+
+  // Head
+  fr(x+4, y+0, 9, 6, '#ffcc99');    // skin
+
+  // Eyes
+  if (dir === 2) {
+    fr(x+6, y+2, 2, 2, '#222');
+    fr(x+10, y+2, 2, 2, '#222');
+  } else if (dir === 0) {
+    // back of head — just hair
+  } else if (dir === 1) {
+    fr(x+11, y+2, 2, 2, '#222');
+  } else {
+    fr(x+4, y+2, 2, 2, '#222');
+  }
+
+  // Hair
+  fr(x+4, y+0, 9, 2, '#554433');
+}
+
+function drawNPC(px, py, dir, color) {
+  const x = Math.floor(px);
+  const y = Math.floor(py);
+
+  // Shadow
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(x+8, y+15, 4, 2, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Legs
+  fr(x+5, y+10, 3, 5, '#555566');
+  fr(x+9, y+10, 3, 5, '#555566');
+  // Body
+  fr(x+4, y+5, 9, 7, color);
+  // Head
+  fr(x+4, y+0, 9, 6, '#ffcc99');
+  // Eyes
+  if (dir === 2) {
+    fr(x+6, y+2, 2, 2, '#222');
+    fr(x+10, y+2, 2, 2, '#222');
+  } else if (dir === 1) {
+    fr(x+11, y+2, 2, 2, '#222');
+  } else if (dir === 3) {
+    fr(x+4, y+2, 2, 2, '#222');
+  }
+  // Hair
+  fr(x+4, y+0, 9, 2, '#443322');
+}
+
+// Draw a starter pedestal
+function drawPedestal(px, py, label) {
+  // Pillar base
+  fr(px+2, py+10, 12, 4, '#446677');
+  fr(px+4, py+6,  8,  5, '#557788');
+  // Poke-ball style orb on top
+  ctx.fillStyle = '#aa3333';
+  ctx.beginPath(); ctx.arc(px+8, py+4, 4, Math.PI, 0); ctx.fill();
+  ctx.fillStyle = '#eeeeee';
+  ctx.beginPath(); ctx.arc(px+8, py+4, 4, 0, Math.PI); ctx.fill();
+  sr(px+4, py+0, 8, 8, '#fff', 1);
+  // Line across middle
+  fr(px+4, py+3, 8, 2, '#222');
+  // Label
+  drawText(label, px+8, py+16, { color: PAL.TEXT, size: 5, align:'center' });
+}
+
+// ── Overworld State ──────────────────────────────────────────
+const overworldState = (function() {
+  let map = null;
+
+  function enter(mapId) {
+    const mid = mapId || PLAYER.mapId;
+    map = MAPS[mid];
+    PLAYER.mapId = mid;
+    // Player position is set by PLAYER initializer (first boot)
+    // or by checkExit() before setState — do not override here.
+    PLAYER.stepTimer = 0;
+    npcDialogue = null;
+  }
+
+  function tileAt(tx, ty) {
+    if (!map) return T.WALL;
+    if (tx < 0 || ty < 0 || tx >= map.w || ty >= map.h) return T.WALL;
+    return map.tiles[ty][tx];
+  }
+
+  function getNPCAt(tx, ty) {
+    if (!map || !map.npcs) return null;
+    return map.npcs.find(n => n.x === tx && n.y === ty && !n.defeated) || null;
+  }
+
+  function update() {
+    // ── Dialogue mode ────────────────────────────────────────
+    if (npcDialogue) {
+      const line = npcDialogue.lines[npcDialogue.lineIdx] || '';
+      if (npcDialogue.revealed < line.length) {
+        npcDialogue.timer++;
+        if (npcDialogue.timer >= 2) { npcDialogue.timer = 0; npcDialogue.revealed++; }
+      }
+      if (inputConfirm()) {
+        if (npcDialogue.revealed < line.length) {
+          npcDialogue.revealed = line.length;
+        } else {
+          npcDialogue.lineIdx++;
+          if (npcDialogue.lineIdx >= npcDialogue.lines.length) {
+            npcDialogue = null;
+          } else {
+            npcDialogue.revealed = 0;
+            npcDialogue.timer = 0;
+          }
+        }
+      }
+      return;
+    }
+
+    // ── Menu / Badge case shortcuts ──────────────────────────
+    if (!npcDialogue && pressed('Enter')) { setState('menu'); return; }
+    if (pressed('KeyB')) { setState('badge_case'); return; }
+
+    // ── Movement ─────────────────────────────────────────────
+    if (PLAYER.stepTimer > 0) {
+      PLAYER.stepTimer--;
+      if (PLAYER.stepTimer === 0) {
+        PLAYER.animFrame = (PLAYER.animFrame + 1) % 4;
+        if (!checkExit()) checkWildEncounter();
+      }
+      return;
+    }
+
+    const dir = inputDir();
+    if (dir !== -1) {
+      PLAYER.dir = dir;
+      let nx = PLAYER.x, ny = PLAYER.y;
+      if (dir === 0) ny--;
+      if (dir === 1) nx++;
+      if (dir === 2) ny++;
+      if (dir === 3) nx--;
+
+      const tile = tileAt(nx, ny);
+      const npcBlock = getNPCAt(nx, ny);
+
+      if (WALKABLE.has(tile) && !npcBlock) {
+        PLAYER.x = nx;
+        PLAYER.y = ny;
+        PLAYER.stepTimer = STEP_FRAMES;
+      }
+    }
+
+    // ── Interaction (Z key) ──────────────────────────────────
+    if (inputConfirm()) {
+      let fx = PLAYER.x, fy = PLAYER.y;
+      if (PLAYER.dir === 0) fy--;
+      if (PLAYER.dir === 1) fx++;
+      if (PLAYER.dir === 2) fy++;
+      if (PLAYER.dir === 3) fx--;
+      const npc = (map && map.npcs && map.npcs.find(n => n.x === fx && n.y === fy)) || null;
+      if (npc) {
+        if (npc.id === 'prof_search' && !SAVE.starterChosen) {
+          setState('prof_intro');
+        } else if (npc.id === 'nurse') {
+          PLAYER.party.forEach(p => { p.hp = p.maxHp; p.moves && p.moves.forEach(m => { if (m.ppLeft !== undefined) m.ppLeft = m.pp; }); });
+          npcDialogue = { lines: ['Welcome to the Googlimon Center!', 'Your Googlimon have been fully healed!', 'We hope to see you again!'], lineIdx: 0, revealed: 0, timer: 0 };
+        } else if (npc.id === 'mart_clerk') {
+          setState('mart');
+        } else if (npc.isTrainer && !npc.defeated) {
+          if (!PLAYER.party.length) {
+            npcDialogue = { lines: ["..."], lineIdx: 0, revealed: 0, timer: 0 };
+          } else {
+            const team = npc.team.map(t => Object.assign({}, t, { hp: t.maxHp, revealedStats: new Set() }));
+            const first = team.shift();
+            dexSee(first.name);
+            setState('battle', {
+              wild: first, fighter: PLAYER.party[0],
+              isTrainer: true, trainerTeam: team,
+              trainerId: npc.id, trainerName: npc.trainerName || 'Trainer',
+              trainerReward: npc.reward || 100,
+            });
+          }
+        } else if (npc.defeated && npc.defeatScript) {
+          npcDialogue = { lines: npc.defeatScript, lineIdx: 0, revealed: 0, timer: 0 };
+        } else if (npc.script) {
+          npcDialogue = { lines: npc.script, lineIdx: 0, revealed: 0, timer: 0 };
+        }
+      }
+    }
+  }
+
+  function checkExit() {
+    if (!map.exits) return false;
+    const ex = map.exits.find(e => e.x === PLAYER.x && e.y === PLAYER.y);
+    if (ex) {
+      PLAYER.mapId = ex.toMap;
+      PLAYER.x = ex.toX;
+      PLAYER.y = ex.toY;
+      setState('overworld', ex.toMap);
+      if (SAVE.starterChosen) { saveGame(); showNotif('GAME SAVED'); }
+      return true;
+    }
+    return false;
+  }
+
+  function render() {
+    // Clear
+    fr(0, 0, W, H, PAL.BG);
+
+    if (!map) return;
+
+    const cam = getCam(map);
+
+    // ── Tiles ────────────────────────────────────────────────
+    const startTX = Math.floor(cam.x / TS);
+    const startTY = Math.floor(cam.y / TS);
+    const endTX = Math.min(startTX + VW + 1, map.w);
+    const endTY = Math.min(startTY + VH + 1, map.h);
+
+    for (let ty = startTY; ty < endTY; ty++) {
+      for (let tx = startTX; tx < endTX; tx++) {
+        const px = tx * TS - cam.x;
+        const py = ty * TS - cam.y;
+        drawTile(tileAt(tx, ty), px, py, G_TICK);
+      }
+    }
+
+    // ── Pedestals (lab only) ─────────────────────────────────
+    if (map.pedestals) {
+      map.pedestals.forEach(p => {
+        const px = p.x * TS - cam.x;
+        const py = p.y * TS - cam.y;
+        drawPedestal(px, py, p.label);
+      });
+    }
+
+    // ── NPCs ─────────────────────────────────────────────────
+    if (map.npcs) {
+      map.npcs.forEach(npc => {
+        const px = npc.x * TS - cam.x;
+        const py = npc.y * TS - cam.y;
+        drawNPC(px, py, npc.dir, npc.color);
+      });
+    }
+
+    // ── Player ───────────────────────────────────────────────
+    const ppx = PLAYER.x * TS - cam.x;
+    const ppy = PLAYER.y * TS - cam.y;
+    drawPlayer(ppx, ppy, PLAYER.dir, PLAYER.animFrame);
+
+    // ── UI Panel ─────────────────────────────────────────────
+    fr(0, UI_Y, W, H - UI_Y, PAL.PANEL);
+    sr(0, UI_Y, W, H - UI_Y, PAL.BORDER, 1);
+    drawText(map.name, 8, UI_Y + 6, { color: PAL.GOLD, size: 10, shadow: true });
+    drawText('Move:Arrows  Talk:Z  Menu:Enter  Help:F1', 8, UI_Y + 22, { color: PAL.TEXT_DIM, size: 6 });
+    if (SAVE.playerName && SAVE.starterChosen) {
+      drawText(SAVE.playerName, W - 8, UI_Y + 6, { color: PAL.ACCENT, size: 9, align: 'right', shadow: true });
+    }
+
+    // ── Dialogue overlay ─────────────────────────────────────
+    if (npcDialogue) {
+      drawDialogueBox(npcDialogue);
+    }
+  }
+
+  return { enter, update, render };
+})();
+
+STATES.overworld = overworldState;
+
+// ============================================================
+// PART 3 — DIALOGUE SYSTEM + PROFESSOR INTRO
+// ============================================================
+
+// ── Game Save State ──────────────────────────────────────────
+const SAVE = {
+  playerName: 'Player',
+  starterChosen: false,
+  dex: {},
+  credits: 500,
+  badges: [],
+  items: {},
+  trainerDefeated: [],
+};
+PLAYER.party = [];
+
+// ── Starter Data ─────────────────────────────────────────────
+const STARTERS = [
+  {
+    name: 'Querycub', type: 'Search',
+    level: 5, maxHp: 45, hp: 45,
+    atk: 12, def: 10, spd: 14,
+    moves: ['Search Pulse', 'Tackle'],
+  },
+  {
+    name: 'Puffbit', type: 'Cloud',
+    level: 5, maxHp: 50, hp: 50,
+    atk: 10, def: 14, spd: 11,
+    moves: ['Mist Byte', 'Tackle'],
+  },
+  {
+    name: 'Thinklet', type: 'AI',
+    level: 5, maxHp: 42, hp: 42,
+    atk: 14, def: 8, spd: 13,
+    moves: ['Neural Zap', 'Tackle'],
+  },
+];
+
+// ── Starter Sprites (canvas primitives) ──────────────────────
+function drawStarterSprite(idx, cx, cy) {
+  if (idx === 0) {
+    // Querycub — teal bear cub with magnifying glass
+    // Ears
+    fr(cx-12, cy-24, 8, 8, '#44aacc');
+    fr(cx+4, cy-24, 8, 8, '#44aacc');
+    fr(cx-10, cy-23, 5, 5, '#ff9988');
+    fr(cx+5, cy-23, 5, 5, '#ff9988');
+    // Head
+    fr(cx-10, cy-20, 20, 16, '#44aacc');
+    // Eyes
+    fr(cx-7, cy-16, 3, 3, '#eef');
+    fr(cx+4, cy-16, 3, 3, '#eef');
+    fr(cx-6, cy-15, 2, 2, '#113');
+    fr(cx+5, cy-15, 2, 2, '#113');
+    // Nose
+    fr(cx-2, cy-11, 4, 3, '#1a3344');
+    // Body
+    fr(cx-11, cy-5, 22, 18, '#3399aa');
+    // Magnifying glass
+    ctx.strokeStyle = '#ffcc00'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx+10, cy+2, 6, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+15, cy+7); ctx.lineTo(cx+19, cy+11); ctx.stroke();
+    ctx.lineWidth = 1;
+    // Paws
+    fr(cx-16, cy+4, 7, 5, '#3399aa');
+    fr(cx+9, cy+4, 7, 5, '#3399aa');
+    // Feet
+    fr(cx-9, cy+11, 8, 5, '#3399aa');
+    fr(cx+1, cy+11, 8, 5, '#3399aa');
+  } else if (idx === 1) {
+    // Puffbit — fluffy cloud creature
+    const cl = '#c0e8f8', cd = '#7aafc8';
+    ctx.fillStyle = cl;
+    ctx.beginPath(); ctx.arc(cx,    cy-10, 14, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx-14, cy-4,  10, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+14, cy-4,  10, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx-7,  cy+6,  11, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+7,  cy+6,  11, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx,    cy+10, 12, 0, Math.PI*2); ctx.fill();
+    // Highlight sheen
+    ctx.fillStyle = '#e8f8ff';
+    ctx.beginPath(); ctx.arc(cx-4, cy-14, 5, 0, Math.PI*2); ctx.fill();
+    // Eyes
+    fr(cx-6, cy-13, 3, 4, '#2255aa');
+    fr(cx+3, cy-13, 3, 4, '#2255aa');
+    // Smile
+    ctx.strokeStyle = '#2255aa'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, cy-7, 5, 0.2, Math.PI-0.2); ctx.stroke();
+    ctx.lineWidth = 1;
+    // Rosy cheeks
+    ctx.fillStyle = '#ffaabb88';
+    ctx.beginPath(); ctx.arc(cx-10, cy-8, 4, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+10, cy-8, 4, 0, Math.PI*2); ctx.fill();
+    // Little foot nubs
+    ctx.fillStyle = cl;
+    ctx.beginPath(); ctx.arc(cx-7, cy+18, 5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+7, cy+18, 5, 0, Math.PI*2); ctx.fill();
+  } else {
+    // Thinklet — angular neural AI creature
+    const tc = '#8855cc', tl = '#cc99ff';
+    // Core body
+    fr(cx-8, cy-10, 16, 20, tc);
+    // Top triangle cap
+    ctx.fillStyle = tc;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy-22); ctx.lineTo(cx-8, cy-10); ctx.lineTo(cx+8, cy-10);
+    ctx.fill();
+    // Bottom triangle
+    ctx.beginPath();
+    ctx.moveTo(cx, cy+18); ctx.lineTo(cx-8, cy+10); ctx.lineTo(cx+8, cy+10);
+    ctx.fill();
+    // Neural arm lines
+    ctx.strokeStyle = tl; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx-8, cy-4); ctx.lineTo(cx-20, cy-8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+8, cy-4); ctx.lineTo(cx+20, cy-8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx-8, cy+4); ctx.lineTo(cx-20, cy+8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx+8, cy+4); ctx.lineTo(cx+20, cy+8); ctx.stroke();
+    ctx.lineWidth = 1;
+    // Node dots
+    ctx.fillStyle = tl;
+    ctx.beginPath(); ctx.arc(cx-22, cy-10, 3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+22, cy-10, 3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx-22, cy+10, 3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx+22, cy+10, 3, 0, Math.PI*2); ctx.fill();
+    // Glowing eyes
+    fr(cx-6, cy-7, 4, 4, '#ffffff');
+    fr(cx+2, cy-7, 4, 4, '#ffffff');
+    fr(cx-5, cy-6, 2, 2, tc);
+    fr(cx+3, cy-6, 2, 2, tc);
+    // Central spark
+    ctx.fillStyle = '#ffff88';
+    ctx.beginPath(); ctx.arc(cx, cy+3, 3, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+// ── Upgrade drawDialogueBox to typewriter ─────────────────────
+// npcDialogue shape: { lines:[], lineIdx:0, revealed:0, timer:0 }
+function drawDialogueBox(dlg) {
+  const bx = 4, by = UI_Y - 68, bw = W - 8, bh = 64;
+  // Dark semi-transparent backdrop for readability
+  ctx.fillStyle = 'rgba(2,8,20,0.88)';
+  ctx.fillRect(bx, by, bw, bh);
+  drawPanel(bx, by, bw, bh, { bg: 'rgba(5,12,26,0.92)', outer: PAL.ACCENT, inner: PAL.BORDER });
+
+  const line = dlg.lines[dlg.lineIdx] || '';
+  const text = line.slice(0, dlg.revealed);
+  drawText(text, bx + 12, by + 14, { color: '#c8e8ff', size: 12, shadow: true });
+
+  const fullyRevealed = dlg.revealed >= line.length;
+  if (fullyRevealed) {
+    const bl = (G_TICK % 30) < 20;
+    if (bl) {
+      if (dlg.lineIdx < dlg.lines.length - 1) {
+        drawText('▼', bx + bw - 16, by + 44, { color: PAL.ACCENT, size: 10 });
+      } else {
+        drawText('[ Z ]', bx + 12, by + 46, { color: PAL.GOLD, size: 9 });
+      }
+    }
+  }
+  drawText(`${dlg.lineIdx + 1}/${dlg.lines.length}`, bx + bw - 12, by + 48,
+    { color: PAL.TEXT_DIM, size: 7, align: 'right' });
+}
+
+// ── Professor Intro State ─────────────────────────────────────
+const profIntroState = (function() {
+  let phase = 0;   // 0=intro dlg, 1=name prompt, 2=post-name dlg, 3=starter pick, 4=outro dlg
+  let lineIdx = 0;
+
+  const INTRO_LINES = [
+    'Oh! You actually came!',
+    'Welcome to my laboratory.',
+    'I am Professor Search,',
+    'researcher of the Googlimon of Googlia.',
+    'Strange glitches have appeared across the',
+    'region. Ancient search algorithms corrupt',
+    'data on every route. Wild Googlimon are',
+    'acting erratically because of it.',
+    'A brave trainer could help me investigate.',
+    'But first — tell me about yourself.',
+  ];
+
+  let postNameLines = [];
+  const mkPostName = name => [
+    `${name}! What a great name.`,
+    'These three Googlimon need a trainer.',
+    'They have been waiting for someone like you.',
+    'Please — choose your first partner!',
+  ];
+
+  let outroLines = [];
+  const mkOutro = (name, starter) => [
+    `Excellent choice! ${starter} is delighted!`,
+    `Take good care of your ${starter}, ${name}.`,
+    'I will send your Googlidex data right away.',
+    `The fate of Googlia rests with you, ${name}.`,
+    'Now go — your adventure begins!',
+  ];
+
+  // Per-line typewriter
+  let twText = '', twRevealed = 0, twTimer = 0;
+  const TW_RATE = 2;
+  function twSet(t) { twText = t; twRevealed = 0; twTimer = 0; }
+  function twTick() {
+    if (twRevealed < twText.length) {
+      twTimer++;
+      if (twTimer >= TW_RATE) { twTimer = 0; twRevealed++; }
+    }
+  }
+  function twDone()  { return twRevealed >= twText.length; }
+  function twSkip()  { twRevealed = twText.length; }
+  function twGet()   { return twText.slice(0, twRevealed); }
+
+  // Starter cursor
+  let starterCursor = 0;
+  let chosenName = '';
+
+  function enter() {
+    phase = 0;
+    lineIdx = 0;
+    starterCursor = 0;
+    chosenName = '';
+    twSet(INTRO_LINES[0]);
+  }
+
+  function advanceLine(lines) {
+    lineIdx++;
+    if (lineIdx >= lines.length) return true; // done
+    twSet(lines[lineIdx]);
+    return false;
+  }
+
+  function update() {
+    if (phase === 0) {
+      twTick();
+      if (inputConfirm()) {
+        if (!twDone()) { twSkip(); return; }
+        if (advanceLine(INTRO_LINES)) {
+          phase = 1; // go to name prompt
+        }
+      }
+
+    } else if (phase === 1) {
+      // Name was already entered on title screen; skip prompt
+      phase = 2;
+      if (!SAVE.playerName) SAVE.playerName = 'PLAYER';
+      postNameLines = mkPostName(SAVE.playerName);
+      lineIdx = 0;
+      twSet(postNameLines[0]);
+
+    } else if (phase === 2) {
+      twTick();
+      if (inputConfirm()) {
+        if (!twDone()) { twSkip(); return; }
+        if (advanceLine(postNameLines)) {
+          phase = 3;
+          starterCursor = 0;
+        }
+      }
+
+    } else if (phase === 3) {
+      if (pressed('ArrowLeft'))  starterCursor = (starterCursor + 2) % 3;
+      if (pressed('ArrowRight')) starterCursor = (starterCursor + 1) % 3;
+      if (inputConfirm()) {
+        chosenName = STARTERS[starterCursor].name;
+        PLAYER.party.push(Object.assign({}, STARTERS[starterCursor]));
+        SAVE.starterChosen = true;
+        outroLines = mkOutro(SAVE.playerName, chosenName);
+        lineIdx = 0;
+        twSet(outroLines[0]);
+        phase = 4;
+      }
+      if (inputCancel()) {
+        phase = 2; // go back to post-name lines
+        lineIdx = postNameLines.length - 1;
+        twSet(postNameLines[lineIdx]);
+      }
+
+    } else if (phase === 4) {
+      twTick();
+      if (inputConfirm()) {
+        if (!twDone()) { twSkip(); return; }
+        if (advanceLine(outroLines)) {
+          setState('overworld', 'lab_interior');
+        }
+      }
+    }
+  }
+
+  // ── Full-screen dialogue box for intro ──────────────────────
+  function renderIntroBox(speakerLabel) {
+    // Dark scene backdrop
+    fr(0, 0, W, H, '#08101a');
+
+    // Professor sprite (large, left side)
+    drawNPC(60, H/2 - 40, 1, '#ffffaa');
+    drawText('Prof. Search', 76, H/2 + 10, { color: PAL.GOLD, size: 7, align:'center', shadow: true });
+
+    // Teal-bordered dialogue panel
+    const bx = 4, by = H - 84, bw = W - 8, bh = 80;
+    // BG
+    fr(bx, by, bw, bh, '#0d1f2d');
+    // Teal double border
+    sr(bx, by, bw, bh, PAL.ACCENT, 2);
+    sr(bx+3, by+3, bw-6, bh-6, PAL.BORDER, 1);
+
+    // Speaker name tab
+    fr(bx+8, by-10, 80, 12, '#0d1f2d');
+    sr(bx+8, by-10, 80, 12, PAL.ACCENT, 1);
+    drawText(speakerLabel, bx+14, by-9, { color: PAL.ACCENT2, size: 7 });
+
+    // Typewriter text
+    drawText(twGet(), bx+12, by+14, { color: '#c8e8ff', size: 11, shadow: true });
+
+    // Advance caret
+    if (twDone()) {
+      const blink = (G_TICK % 30) < 20;
+      if (blink) drawText('▼', bx + bw - 16, by + bh - 16, { color: PAL.ACCENT2, size: 8 });
+    }
+  }
+
+  // ── Starter Selection Render ──────────────────────────────
+  function renderStarterSelect() {
+    fr(0, 0, W, H, '#08101a');
+
+    drawTextC('Choose your starter!', 12, { color: PAL.GOLD, size: 10, shadow: true });
+
+    // 3 cards — centered in 480px: each 130px, 10px gap, 30px outer margin
+    const cardW = 128, cardH = 180, topY = 36;
+    const positions = [
+      W/2 - cardW - 14,
+      W/2 - cardW/2,
+      W/2 + 14,
+    ];
+
+    STARTERS.forEach((s, i) => {
+      const sx = positions[i];
+      const sel = i === starterCursor;
+
+      // Card background
+      fr(sx, topY, cardW, cardH, sel ? '#112233' : '#0a1520');
+      // Teal border for selected, dim border for others
+      sr(sx, topY, cardW, cardH, sel ? PAL.ACCENT : PAL.BORDER, sel ? 2 : 1);
+      if (sel) sr(sx+3, topY+3, cardW-6, cardH-6, PAL.BORDER, 1);
+
+      // Sprite (centered in card, top portion)
+      const spriteCX = sx + cardW/2;
+      const spriteCY = topY + 68;
+      drawStarterSprite(i, spriteCX, spriteCY);
+
+      // Name
+      drawText(s.name, sx + cardW/2, topY + 124, { color: sel ? PAL.TEXT : PAL.TEXT_DIM, size: 8, align:'center', shadow: sel });
+
+      // Type badge (centered under name)
+      const typeCol = TYPE_COL[s.type] ?? PAL.TEXT_DIM;
+      const bw2 = 44, bh2 = 11;
+      const bx2 = sx + cardW/2 - bw2/2;
+      fr(bx2, topY+138, bw2, bh2, typeCol + '33');
+      sr(bx2, topY+138, bw2, bh2, typeCol, 1);
+      drawText(s.type.toUpperCase(), sx + cardW/2, topY+139, { color: typeCol, size: 6, align:'center' });
+
+      // Stats row
+      drawText(`HP:${s.maxHp} AT:${s.atk}`, sx + cardW/2, topY+154, { color: PAL.TEXT_DIM, size: 6, align:'center' });
+      drawText(`Lv.${s.level}`, sx + cardW/2, topY+164, { color: PAL.TEXT_DIM, size: 6, align:'center' });
+    });
+
+    // Arrow selection hint
+    drawTextC('← →  Select      Z  Confirm      X  Back', H - 14,
+      { color: PAL.TEXT_DIM, size: 6 });
+    // Selected name highlight
+    drawTextC(`▶  ${STARTERS[starterCursor].name}  ◀`, H - 26, { color: PAL.GOLD, size: 8 });
+  }
+
+  function render() {
+    if (phase === 3) {
+      renderStarterSelect();
+    } else {
+      renderIntroBox('Prof. Search');
+    }
+  }
+
+  return { enter, update, render };
+})();
+
+STATES.prof_intro = profIntroState;
+
+// ============================================================
+// PART 4 — ROUTE 1, WILD DATA, BATTLE SYSTEM
+// ============================================================
+
+// ── Route 1 Map (20×25) ──────────────────────────────────────
+MAPS.route1 = {
+  name: 'Route 1',
+  w: 20, h: 25,
+  tiles: [
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 0  north border (exit to Searchburg)
+    mkRow('T.........  .........T'),  // row 1  (20 chars)
+    mkRow('T.........  .........T'),  // row 2
+    mkRow('T....GGGGG..GGGGg....T'),  // row 3
+    mkRow('TgGGGGGGGG..GGGGGGGgT'),  // row 4
+    mkRow('TgGGGGGGGG..GGGGGGGgT'),  // row 5
+    mkRow('TgGGGGGGGG..GGGGGGGgT'),  // row 6
+    mkRow('T....GGGGG..GGGGG....T'),  // row 7
+    mkRow('T....................T'),  // row 8  breather
+    mkRow('T....................T'),  // row 9
+    mkRow('T..gGGGGGG..GGGGGGg.T'),  // row 10
+    mkRow('T.gGGGGGGG..GGGGGGGgT'),  // row 11
+    mkRow('T.gGGGGGGG..GGGGGGGgT'),  // row 12
+    mkRow('T.gGGGGGGG..GGGGGGGgT'),  // row 13
+    mkRow('T.gGGGGGGG..GGGGGGGgT'),  // row 14
+    mkRow('T..gGGGGG....GGGGGg.T'),  // row 15
+    mkRow('T....................T'),  // row 16 breather
+    mkRow('T.....gGGGGGGGg.....T'),  // row 17
+    mkRow('T....gGGGGGGGGGg....T'),  // row 18
+    mkRow('T....gGGGGGGGGGg....T'),  // row 19
+    mkRow('T.....gGGGGGGGg.....T'),  // row 20
+    mkRow('T....................T'),  // row 21
+    mkRow('T..ggggggggggggggg..T'),  // row 22 short grass
+    mkRow('T....................T'),  // row 23 (player arrives here from Cache Town)
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 24 south border (exit back to Cache Town)
+  ],
+  exits: [
+    { x: 9,  y: 0,  toMap: 'searchburg', toX: 9,  toY: 13 },
+    { x: 10, y: 0,  toMap: 'searchburg', toX: 10, toY: 13 },
+    { x: 9,  y: 24, toMap: 'cache_town', toX: 9,  toY: 13 },
+    { x: 10, y: 24, toMap: 'cache_town', toX: 10, toY: 13 },
+  ],
+  playerStart: { x: 9, y: 23 },
+  npcs: [
+    {
+      id: 'sign_r1',
+      x: 7, y: 22, dir: 2,
+      color: '#aabb88',
+      script: ['Route 1 — Connecting Cache Town to Searchburg.', 'Wild Googlimon lurk in the tall grass!'],
+    },
+  ],
+  encounterPool: [
+    { name: 'Pixmouse', minLv: 2, maxLv: 4, weight: 20 },
+    { name: 'Chirper',  minLv: 2, maxLv: 4, weight: 20 },
+    { name: 'Bugbyte',  minLv: 3, maxLv: 5, weight: 15 },
+    { name: 'Mousenet', minLv: 2, maxLv: 4, weight: 20 },
+    { name: 'Scoutgle', minLv: 3, maxLv: 5, weight: 10 },
+    { name: 'Lockup',   minLv: 3, maxLv: 5, weight: 15 },
+  ],
+};
+
+// ── Type Effectiveness Chart ──────────────────────────────────
+const TYPE_CHART = (() => {
+  const ALL = ['Search','Browser','Cloud','Data','Media','AI',
+               'Security','Gaming','Social','Hardware','Electric','Virus','Quantum','Cosmic'];
+  const m = {};
+  ALL.forEach(a => { m[a] = {}; ALL.forEach(d => { m[a][d] = 1; }); });
+  function se(a, d) { m[a][d] = 2; }
+  function nve(a, d) { m[a][d] = 0.5; }
+
+  se('Search','Virus');    se('Search','Data');     se('Search','Browser');
+  nve('Search','Security'); nve('Search','Cloud');
+
+  se('Browser','Security'); se('Browser','Cloud');   se('Browser','Gaming');
+  nve('Browser','Virus');   nve('Browser','Data');
+
+  se('Cloud','Data');      se('Cloud','AI');        se('Cloud','Social');
+  nve('Cloud','Electric'); nve('Cloud','Security');
+
+  se('Data','AI');         se('Data','Quantum');    se('Data','Browser');
+  nve('Data','Virus');     nve('Data','Security');
+
+  se('Media','Social');    se('Media','Gaming');    se('Media','Browser');
+  nve('Media','Security'); nve('Media','Data');
+
+  se('AI','Search');       se('AI','Browser');      se('AI','Data');
+  nve('AI','Quantum');     nve('AI','Virus');
+
+  se('Security','Virus');  se('Security','Data');   se('Security','Browser');
+  nve('Security','Quantum'); nve('Security','AI');
+
+  se('Gaming','Social');   se('Gaming','Media');    se('Gaming','Hardware');
+  nve('Gaming','Security'); nve('Gaming','Data');
+
+  se('Social','Media');    se('Social','Gaming');   se('Social','Browser');
+  nve('Social','Security'); nve('Social','Data');
+
+  se('Hardware','Electric'); se('Hardware','Virus'); se('Hardware','Gaming');
+  nve('Hardware','Cloud');   nve('Hardware','Quantum');
+
+  se('Electric','Cloud');   se('Electric','Hardware'); se('Electric','Browser');
+  nve('Electric','Security'); nve('Electric','Data');
+
+  se('Virus','AI');  se('Virus','Browser'); se('Virus','Data'); se('Virus','Cloud');
+  nve('Virus','Security'); nve('Virus','Hardware');
+
+  se('Quantum','Security'); se('Quantum','AI'); se('Quantum','Browser'); se('Quantum','Electric');
+  nve('Quantum','Data');    nve('Quantum','Hardware');
+
+  se('Cosmic','Quantum'); se('Cosmic','Virus'); se('Cosmic','AI');
+  nve('Cosmic','Data');   nve('Cosmic','Security');
+
+  return m;
+})();
+
+function getEffectiveness(atkType, defType1, defType2) {
+  const e1 = (TYPE_CHART[atkType] && TYPE_CHART[atkType][defType1]) ?? 1;
+  const e2 = (defType2 && TYPE_CHART[atkType] && TYPE_CHART[atkType][defType2]) ?? 1;
+  return e1 * e2;
+}
+
+// ── Wild Googlimon Species Data ───────────────────────────────
+const SPECIES = {
+  Pixmouse: {
+    type1:'Data', type2:'Hardware',
+    baseHp:36, baseAtk:8, baseDef:7, baseSpd:13,
+    catchRate:200, xpYield:38,
+    learnset:[
+      {lv:1,move:{name:'Nibble',     type:'Hardware',power:30,pp:35}},
+      {lv:1,move:{name:'Pixel Dust', type:'Data',    power:20,pp:40}},
+      {lv:4,move:{name:'Byte Bite',  type:'Data',    power:40,pp:25}},
+      {lv:6,move:{name:'Scurry',     type:'Hardware',power:0, pp:20,effect:'spd+1'}},
+    ],
+  },
+  Chirper: {
+    type1:'Social', type2:'Media',
+    baseHp:38, baseAtk:10, baseDef:6, baseSpd:15,
+    catchRate:180, xpYield:44,
+    learnset:[
+      {lv:1,move:{name:'Chirp',      type:'Social', power:30,pp:35}},
+      {lv:1,move:{name:'Peck',       type:'Hardware',power:25,pp:40}},
+      {lv:4,move:{name:'Tweet Blitz',type:'Social', power:40,pp:25}},
+      {lv:6,move:{name:'Viral Post', type:'Media',  power:0, pp:20,effect:'atk+1'}},
+    ],
+  },
+  Bugbyte: {
+    type1:'Virus', type2:'Data',
+    baseHp:40, baseAtk:11, baseDef:8, baseSpd:10,
+    catchRate:150, xpYield:54,
+    learnset:[
+      {lv:1,move:{name:'Corrupt',    type:'Virus',   power:30,pp:35}},
+      {lv:1,move:{name:'Sting',      type:'Hardware',power:20,pp:40}},
+      {lv:3,move:{name:'Infect',     type:'Virus',   power:0, pp:20,effect:'corrupt'}},
+      {lv:5,move:{name:'Data Drain', type:'Data',    power:40,pp:25}},
+    ],
+  },
+  Mousenet: {
+    type1:'Browser', type2:'Social',
+    baseHp:40, baseAtk:9, baseDef:9, baseSpd:12,
+    catchRate:190, xpYield:40,
+    learnset:[
+      {lv:1,move:{name:'Click',      type:'Browser',power:25,pp:40}},
+      {lv:1,move:{name:'Scroll',     type:'Social', power:20,pp:40}},
+      {lv:3,move:{name:'Tab Spam',   type:'Browser',power:35,pp:30}},
+      {lv:5,move:{name:'Network',    type:'Social', power:40,pp:25}},
+    ],
+  },
+  Scoutgle: {
+    type1:'Search', type2:'AI',
+    baseHp:42, baseAtk:13, baseDef:9, baseSpd:13,
+    catchRate:100, xpYield:65,
+    learnset:[
+      {lv:1,move:{name:'Query',      type:'Search',power:35,pp:30}},
+      {lv:1,move:{name:'Index Scan', type:'Data',  power:25,pp:35}},
+      {lv:3,move:{name:'Rank Blast', type:'Search',power:45,pp:20}},
+      {lv:5,move:{name:'Learn',      type:'AI',    power:0, pp:15,effect:'atk+1'}},
+    ],
+  },
+  Lockup: {
+    type1:'Security', type2:'Electric',
+    baseHp:46, baseAtk:10, baseDef:14, baseSpd:8,
+    catchRate:120, xpYield:60,
+    learnset:[
+      {lv:1,move:{name:'Zap Lock',   type:'Electric', power:30,pp:30}},
+      {lv:1,move:{name:'Firewall',   type:'Security', power:0, pp:20,effect:'def+1'}},
+      {lv:3,move:{name:'Shock Lock', type:'Electric', power:40,pp:25}},
+      {lv:5,move:{name:'Encrypt',    type:'Security', power:50,pp:20}},
+    ],
+  },
+};
+
+// ── Googlidex helpers ─────────────────────────────────────────
+function dexSee(name) {
+  if (!SAVE.dex[name]) SAVE.dex[name] = { seen: false, caught: false };
+  SAVE.dex[name].seen = true;
+}
+function dexCatch(name) {
+  if (!SAVE.dex[name]) SAVE.dex[name] = { seen: false, caught: false };
+  SAVE.dex[name].seen = true;
+  SAVE.dex[name].caught = true;
+}
+
+// ── Wild Googlimon generator ──────────────────────────────────
+function xpToLevel(lv) { return Math.floor(lv * lv * 5); }
+
+function generateWild(name, level) {
+  const sp = SPECIES[name];
+  if (!sp) return null;
+  const sc = 1 + (level - 1) * 0.12;
+  const maxHp = Math.max(10, Math.floor(sp.baseHp * sc));
+  const moves = sp.learnset
+    .filter(e => e.lv <= level)
+    .map(e => Object.assign({}, e.move, { ppLeft: e.move.pp }))
+    .slice(-4);
+  return {
+    name, level,
+    type1: sp.type1, type2: sp.type2 || null,
+    maxHp, hp: maxHp,
+    atk: Math.max(5, Math.floor(sp.baseAtk * sc)),
+    def: Math.max(5, Math.floor(sp.baseDef * sc)),
+    spd: Math.max(5, Math.floor(sp.baseSpd * sc)),
+    moves, catchRate: sp.catchRate, xpYield: sp.xpYield,
+    status: null, revealedStats: new Set(),
+  };
+}
+
+function checkWildEncounter() {
+  if (!SAVE.starterChosen) return;
+  if (!PLAYER.party.length) return;
+  const map = MAPS[PLAYER.mapId];
+  if (!map || !map.encounterPool) return;
+  const tile = map.tiles[PLAYER.y] && map.tiles[PLAYER.y][PLAYER.x];
+  if (!ENCOUNTER_TILES.has(tile)) return;
+  if (Math.random() >= 1/6) return;
+
+  const pool = map.encounterPool;
+  const total = pool.reduce((s, e) => s + e.weight, 0);
+  let r = Math.floor(Math.random() * total);
+  const pick = pool.find(e => { r -= e.weight; return r < 0; }) || pool[0];
+  const level = pick.minLv + Math.floor(Math.random() * (pick.maxLv - pick.minLv + 1));
+  const wild = generateWild(pick.name, level);
+  if (!wild) return;
+  setState('battle', { wild, fighter: PLAYER.party[0] });
+}
+
+// ── Battle State ──────────────────────────────────────────────
+const battleState = (function() {
+  let wild = null, fighter = null;
+  let phase = 'msg'; // 'msg'|'choose'|'move_menu'|'catch'|'level_up'|'done'
+  let cursor = 0, moveCursor = 0;
+  let msgs = [], msgText = '', msgRevealed = 0, msgTimer = 0;
+  const MSG_RATE = 2;
+  let afterMsg = null;
+  let shakesNeeded = 0, shakes = 0, shakeTimer = 0, caughtSuccess = false;
+  let levelUpMsg = '';
+  let result = '';
+  let isTrainer = false, trainerTeam = [], trainerId = null;
+  let trainerName = '', trainerReward = 0;
+  let afterLvUp = null;
+
+  function enter(args) {
+    wild = args.wild; const f = args.fighter;
+    fighter = f;
+    isTrainer = !!(args.isTrainer);
+    trainerTeam = args.trainerTeam ? args.trainerTeam.slice() : [];
+    trainerId   = args.trainerId  || null;
+    trainerName = args.trainerName || 'Trainer';
+    trainerReward = args.trainerReward || 0;
+    afterLvUp = null;
+    if (fighter.xp === undefined) { fighter.xp = 0; fighter.xpToNext = xpToLevel(fighter.level + 1); }
+    // Normalize starter string-moves to objects
+    if (fighter.moves && fighter.moves.length && typeof fighter.moves[0] === 'string') {
+      fighter.moves = fighter.moves.map(name => ({
+        name, type: fighter.type || fighter.type1 || 'Search', power: 40, pp: 30, ppLeft: 30
+      }));
+    }
+    // Pre-load sprites for this battle
+    tryLoadBattleSprites(wild.name);
+    trainerTeam.forEach(m => tryLoadBattleSprites(m.name));
+    phase = 'msg'; msgs = []; result = '';
+    dexSee(wild.name);
+    const intro = isTrainer
+      ? `${trainerName} sent out ${wild.name}!`
+      : `A wild ${wild.name} appeared!`;
+    queueMsgs([intro], () => { phase = 'choose'; cursor = 0; });
+  }
+
+  function trainerEndSetup() {
+    SAVE.credits += trainerReward;
+    if (trainerId) {
+      const m = MAPS[PLAYER.mapId];
+      const npc = m && m.npcs && m.npcs.find(n => n.id === trainerId);
+      if (npc) npc.defeated = true;
+      if (!SAVE.trainerDefeated.includes(trainerId)) SAVE.trainerDefeated.push(trainerId);
+      if (trainerId === 'scout_searcher') {
+        if (!SAVE.badges.includes('Index Badge')) SAVE.badges.push('Index Badge');
+        if (!SAVE.items['TM: Search Pulse']) SAVE.items['TM: Search Pulse'] = 0;
+        SAVE.items['TM: Search Pulse']++;
+      }
+    }
+    const endMsgs = trainerId === 'scout_searcher'
+      ? [`You defeated Scout Searcher!`, `The Index Badge is yours!`, `Take TM: Search Pulse!`]
+      : [`You defeated ${trainerName}!`, `Got ${trainerReward} credits!`];
+    queueMsgs(endMsgs, () => { phase = 'done'; });
+  }
+
+  function loadMsg() {
+    if (msgs.length === 0) {
+      if (afterMsg) { const cb = afterMsg; afterMsg = null; cb(); }
+      return;
+    }
+    msgText = msgs.shift();
+    msgRevealed = 0; msgTimer = 0;
+    phase = 'msg';
+  }
+
+  function queueMsgs(arr, cb) {
+    msgs.push(...arr);
+    afterMsg = cb || null;
+    loadMsg();
+  }
+
+  function calcDmg(lvl, power, atk, def, eff) {
+    if (!power) return 0;
+    const base = Math.floor((2*lvl/5+2) * power * atk / def / 50) + 2;
+    return Math.max(1, Math.floor(base * eff * (0.85 + Math.random()*0.15)));
+  }
+
+  function revealStat() {
+    const hidden = ['atk','def','spd'].filter(s => !wild.revealedStats.has(s));
+    if (!hidden.length) return;
+    const s = hidden[Math.floor(Math.random() * hidden.length)];
+    wild.revealedStats.add(s);
+    msgs.push(`Index! ${wild.name}'s ${s.toUpperCase()}: ${wild[s]}`);
+  }
+
+  function doEnemyTurn() {
+    if (wild.hp <= 0) { phase = 'choose'; return; }
+    const valid = wild.moves.filter(m => (m.ppLeft||m.pp) > 0);
+    const move = valid.length ? valid[Math.floor(Math.random()*valid.length)] : wild.moves[0];
+    if (move.ppLeft !== undefined) move.ppLeft = Math.max(0, move.ppLeft-1);
+    const newMsgs = [`${wild.name} used ${move.name}!`];
+    if (move.power > 0) {
+      const pType = fighter.type || fighter.type1 || 'Search';
+      const eff = getEffectiveness(move.type, pType, null);
+      const dmg = calcDmg(wild.level, move.power, wild.atk, fighter.def, eff);
+      fighter.hp = Math.max(0, fighter.hp - dmg);
+      newMsgs.push(`${fighter.name} took ${dmg} dmg!`);
+      if (eff >= 2) newMsgs.push("Super effective!");
+      if (eff <= 0.5) newMsgs.push("Not very effective...");
+    }
+    if (fighter.hp <= 0) {
+      fighter.hp = 0;
+      newMsgs.push(`${fighter.name} fainted!`);
+      queueMsgs(newMsgs, () => { result = 'lose'; phase = 'done'; });
+    } else {
+      queueMsgs(newMsgs, () => { phase = 'choose'; });
+    }
+  }
+
+  function doPlayerAttack(move) {
+    if (move.ppLeft !== undefined) move.ppLeft = Math.max(0, move.ppLeft-1);
+    const newMsgs = [`${fighter.name} used ${move.name}!`];
+    if (move.power > 0) {
+      const eff = getEffectiveness(move.type, wild.type1, wild.type2);
+      const dmg = calcDmg(fighter.level, move.power, fighter.atk, wild.def, eff);
+      wild.hp = Math.max(0, wild.hp - dmg);
+      newMsgs.push(`Dealt ${dmg} damage!`);
+      if (eff >= 2) { newMsgs.push("Super effective!"); revealStat(); }
+      if (eff <= 0.5) newMsgs.push("Not very effective...");
+    }
+    if (wild.hp <= 0) {
+      wild.hp = 0;
+      newMsgs.push(`${isTrainer ? '' : 'Wild '}${wild.name} fainted!`);
+      queueMsgs(newMsgs, handleFaint);
+    } else {
+      queueMsgs(newMsgs, doEnemyTurn);
+    }
+  }
+
+  function handleFaint() {
+    const xp = Math.max(1, Math.floor(wild.xpYield * wild.level / 7));
+    fighter.xp += xp;
+    const newMsgs = [`${fighter.name} got ${xp} XP!`];
+    const didLv = fighter.xp >= fighter.xpToNext;
+    if (didLv) {
+      fighter.xp -= fighter.xpToNext;
+      fighter.level++;
+      fighter.xpToNext = xpToLevel(fighter.level + 1);
+      fighter.maxHp += 4; fighter.hp = Math.min(fighter.hp+4, fighter.maxHp);
+      fighter.atk++;  fighter.def++;  fighter.spd++;
+      levelUpMsg = `${fighter.name} → Lv.${fighter.level}!`;
+      newMsgs.push(levelUpMsg);
+    }
+    if (isTrainer && trainerTeam.length > 0) {
+      const next = trainerTeam.shift();
+      dexSee(next.name);
+      const swapMsg = `${trainerName} sent out ${next.name}!`;
+      if (didLv) {
+        afterLvUp = () => { wild = next; queueMsgs([swapMsg], () => { phase = 'choose'; }); };
+        queueMsgs(newMsgs, () => { phase = 'level_up'; });
+      } else {
+        wild = next;
+        queueMsgs(newMsgs.concat([swapMsg]), () => { phase = 'choose'; });
+      }
+    } else {
+      result = isTrainer ? 'trainer_win' : 'win';
+      if (didLv) {
+        afterLvUp = isTrainer ? trainerEndSetup : () => { phase = 'done'; };
+        queueMsgs(newMsgs, () => { phase = 'level_up'; });
+      } else {
+        if (isTrainer) queueMsgs(newMsgs, trainerEndSetup);
+        else           queueMsgs(newMsgs, () => { phase = 'done'; });
+      }
+    }
+  }
+
+  function tryCatch() {
+    const rate = Math.floor((3*wild.maxHp - 2*wild.hp) / (3*wild.maxHp) * wild.catchRate);
+    const t = Math.max(1, Math.min(255, rate));
+    shakesNeeded = 0;
+    for (let i = 0; i < 4; i++) {
+      if (Math.floor(Math.random()*256) < t) shakesNeeded++; else break;
+    }
+    caughtSuccess = (shakesNeeded === 4);
+    shakes = 0; shakeTimer = 0; phase = 'catch';
+  }
+
+  function update() {
+    if (phase === 'msg') {
+      if (msgRevealed < msgText.length) {
+        msgTimer++;
+        if (msgTimer >= MSG_RATE) { msgTimer = 0; msgRevealed++; }
+      }
+      if (inputConfirm()) {
+        if (msgRevealed < msgText.length) { msgRevealed = msgText.length; return; }
+        loadMsg();
+      }
+      return;
+    }
+
+    if (phase === 'choose') {
+      if (pressed('ArrowUp'))   cursor = (cursor+2)%3;
+      if (pressed('ArrowDown')) cursor = (cursor+1)%3;
+      if (inputConfirm()) {
+        if (cursor === 0) { phase = 'move_menu'; moveCursor = 0; }
+        else if (cursor === 1) {
+          if (isTrainer) { /* can't catch trainer Googlimon */ }
+          else queueMsgs([`You threw a Cache Ball!`], () => { tryCatch(); });
+        } else {
+          if (Math.random() < 0.8) {
+            result = 'flee';
+            queueMsgs([`Got away safely!`], () => { phase = 'done'; });
+          } else {
+            queueMsgs([`Couldn't escape!`], doEnemyTurn);
+          }
+        }
+      }
+      return;
+    }
+
+    if (phase === 'move_menu') {
+      const n = fighter.moves.length;
+      if (pressed('ArrowUp'))   moveCursor = (moveCursor+n-1)%n;
+      if (pressed('ArrowDown')) moveCursor = (moveCursor+1)%n;
+      if (inputConfirm()) { doPlayerAttack(fighter.moves[moveCursor]); }
+      if (inputCancel())  { phase = 'choose'; }
+      return;
+    }
+
+    if (phase === 'catch') {
+      shakeTimer++;
+      if (shakeTimer > 45) {
+        shakeTimer = 0;
+        if (shakes < shakesNeeded) {
+          shakes++;
+        } else {
+          if (caughtSuccess) {
+            dexCatch(wild.name);
+            const c = Object.assign({}, wild, {
+              hp: wild.maxHp, xp: 0, xpToNext: xpToLevel(wild.level+1),
+              revealedStats: new Set(),
+            });
+            if (PLAYER.party.length < 6) PLAYER.party.push(c);
+            result = 'catch';
+            queueMsgs([`${wild.name} was caught!`, `Added to your team!`], () => { phase='done'; });
+          } else {
+            queueMsgs([`${wild.name} broke free!`], doEnemyTurn);
+          }
+        }
+      }
+      return;
+    }
+
+    if (phase === 'level_up') {
+      if (inputConfirm()) {
+        if (afterLvUp) { const cb = afterLvUp; afterLvUp = null; cb(); }
+        else phase = 'done';
+      }
+      return;
+    }
+
+    if (phase === 'done') {
+      if (SAVE.starterChosen) { saveGame(); showNotif('GAME SAVED'); }
+      setState('overworld', PLAYER.mapId);
+    }
+  }
+
+  // ── Render helpers ──────────────────────────────────────────
+  function renderWildSprite(cx, cy) {
+    // Try PNG sprite first (front view for enemy)
+    const sprImg = getSprite(`${wild.name}_front`);
+    if (sprImg) {
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(sprImg, cx - 40, cy - 44, 80, 80);
+      return;
+    }
+    const col = {
+      Pixmouse:'#9966bb', Chirper:'#00bbcc', Bugbyte:'#44aa22',
+      Mousenet:'#4488ee', Scoutgle:'#ddaa22', Lockup:'#22bb66',
+      Seekrow:'#445599', Findrake:'#cc8822',
+    }[wild.name] || '#aaaaaa';
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(cx, cy, 22, 0, Math.PI*2); ctx.fill();
+    // Inner sheen
+    ctx.fillStyle = col+'88';
+    ctx.beginPath(); ctx.arc(cx-6, cy-8, 10, 0, Math.PI*2); ctx.fill();
+    // Eyes
+    fr(cx-8, cy-8, 5, 5, '#fff'); fr(cx+3, cy-8, 5, 5, '#fff');
+    fr(cx-6, cy-6, 3, 3, '#222'); fr(cx+5, cy-6, 3, 3, '#222');
+    // Species detail
+    if (wild.name === 'Pixmouse') {
+      fr(cx-8,cy-28,5,8,col); fr(cx+3,cy-28,5,8,col);  // ears
+      fr(cx+20,cy-2,14,3,col);                           // tail
+    } else if (wild.name === 'Chirper') {
+      fr(cx+19,cy-6,10,6,'#ffaa00');                    // beak
+      fr(cx-28,cy-4,10,14,col); fr(cx+18,cy-4,10,14,col); // wings
+    } else if (wild.name === 'Bugbyte') {
+      fr(cx-5,cy-34,4,12,col); fr(cx+1,cy-34,4,12,col); // antennae
+      fr(cx-6,cy-36,6,5,'#ffdd00'); fr(cx,cy-36,6,5,'#ffdd00'); // tips
+    } else if (wild.name === 'Mousenet') {
+      ctx.strokeStyle='#fff'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(cx+2,cy+4,9,0,Math.PI*2); ctx.stroke();
+      ctx.lineWidth=1; fr(cx+18,cy+8,14,3,col);
+    } else if (wild.name === 'Scoutgle') {
+      fr(cx-9,cy-28,6,8,col); fr(cx+3,cy-28,6,8,col);  // ears
+      ctx.strokeStyle='#fff'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(cx+10,cy+8,9,0,Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx+17,cy+15); ctx.lineTo(cx+22,cy+21); ctx.stroke();
+      ctx.lineWidth=1;
+    } else if (wild.name === 'Lockup') {
+      ctx.strokeStyle=col; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.arc(cx,cy-30,12,Math.PI,0); ctx.stroke();
+      ctx.lineWidth=1;
+      fr(cx-6,cy-6,12,14,col);
+      fr(cx-2,cy-2,4,8,'#fff');
+      ctx.fillStyle='#ffee44';
+      ctx.beginPath(); ctx.moveTo(cx-22,cy-2); ctx.lineTo(cx-14,cy+1); ctx.lineTo(cx-18,cy+6); ctx.lineTo(cx-12,cy+8); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(cx+22,cy-2); ctx.lineTo(cx+14,cy+1); ctx.lineTo(cx+18,cy+6); ctx.lineTo(cx+12,cy+8); ctx.fill();
+    } else if (wild.name === 'Seekrow') {
+      // Crow-like bird: sharp beak, tail feathers, wings
+      fr(cx+18,cy-6,14,7,'#ffcc55');                           // beak
+      fr(cx-26,cy-6,10,16,col); fr(cx+16,cy-6,10,16,col);    // wings
+      fr(cx-4,cy+18,4,14,col); fr(cx,cy+18,4,14,col);         // tail
+    } else if (wild.name === 'Findrake') {
+      // Drake: ridged head crest, claws, search-lens eye
+      fr(cx-10,cy-38,6,14,col); fr(cx+4,cy-38,6,14,col);      // head crest
+      ctx.strokeStyle='#fff'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(cx-4,cy-8,9,0,Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx+5,cy-2); ctx.lineTo(cx+18,cy+8); ctx.stroke();
+      ctx.lineWidth=1;
+      fr(cx-20,cy+8,6,10,col); fr(cx+14,cy+8,6,10,col);       // front claws
+    }
+  }
+
+  function render() {
+    fr(0, 0, W, H, '#060c16');
+
+    // ── Enemy panel (top-right) ───────────────────────────────
+    const ep = { x: W*0.52, y: 8, w: W*0.46, h: 94 };
+    fr(ep.x, ep.y, ep.w, ep.h, PAL.PANEL);
+    sr(ep.x, ep.y, ep.w, ep.h, PAL.BORDER, 1);
+    drawText(wild.name, ep.x+6, ep.y+5, { color: '#c8e8ff', size: 11, shadow: true });
+    drawText(`Lv.${wild.level}`, ep.x+ep.w-6, ep.y+5, { color:PAL.TEXT_DIM, size:9, align:'right' });
+    drawTypeBadge(wild.type1, ep.x+6, ep.y+19);
+    if (wild.type2) drawTypeBadge(wild.type2, ep.x+50, ep.y+19);
+    const ehpRat = wild.hp / wild.maxHp;
+    const ehpCol = ehpRat > 0.5 ? PAL.HP_HI : ehpRat > 0.25 ? PAL.HP_MED : PAL.HP_LOW;
+    drawBar(ep.x+6, ep.y+34, ep.w-12, 7, ehpRat, ehpCol);
+    drawText('HP', ep.x+6, ep.y+44, { color:PAL.TEXT_DIM, size:6 });
+    // Revealed stats (Indexed Advantage)
+    let rx = ep.x+6, ry = ep.y+56;
+    wild.revealedStats.forEach(s => {
+      const lbl = {atk:'ATK',def:'DEF',spd:'SPD'}[s];
+      drawText(`${lbl}:${wild[s]}`, rx, ry, { color:PAL.GOLD, size:6 });
+      rx += 60;
+    });
+    // Status
+    if (wild.status) drawText(wild.status, ep.x+6, ep.y+70, { color:PAL.CORRUPTED, size:6 });
+
+    // ── Wild sprite (top-left) ────────────────────────────────
+    renderWildSprite(W*0.22, 72);
+
+    // ── Player panel (mid-left) ───────────────────────────────
+    const pp = { x: 8, y: 112, w: W*0.46, h: 56 };
+    fr(pp.x, pp.y, pp.w, pp.h, PAL.PANEL2);
+    sr(pp.x, pp.y, pp.w, pp.h, PAL.BORDER, 1);
+    drawText(fighter.name, pp.x+6, pp.y+4, { color:'#c8e8ff', size:11, shadow:true });
+    drawText(`Lv.${fighter.level}`, pp.x+pp.w-6, pp.y+4, { color:PAL.TEXT_DIM, size:9, align:'right' });
+    drawHPBar(pp.x+6, pp.y+18, pp.w-12, 7, fighter.hp, fighter.maxHp);
+    drawText(`${fighter.hp}/${fighter.maxHp}`, pp.x+6, pp.y+28, { color:PAL.TEXT_DIM, size:6 });
+    const xpRat = fighter.xpToNext > 0 ? fighter.xp/fighter.xpToNext : 0;
+    drawBar(pp.x+6, pp.y+42, pp.w-12, 4, xpRat, PAL.EXP);
+
+    // ── Player battle sprite (mid-right) ─────────────────────
+    const bc = W*0.72, by2 = 130;
+    fr(bc-8, by2-24, 16, 20, PAL.ACCENT);
+    fr(bc-6, by2-38, 12, 14, '#ffcc99');
+    fr(bc-6, by2-40, 12, 4,  '#554433');
+    fr(bc-6, by2-10, 5, 8,   '#226699');
+    fr(bc+1, by2-10, 5, 8,   '#226699');
+
+    // ── Message log ───────────────────────────────────────────
+    const lp = { x:4, y:174, w:W-8, h:58 };
+    fr(lp.x, lp.y, lp.w, lp.h, PAL.PANEL);
+    sr(lp.x, lp.y, lp.w, lp.h, PAL.ACCENT, 1);
+    if (phase === 'msg' && msgText) {
+      drawText(msgText.slice(0, msgRevealed), lp.x+10, lp.y+10, { color:'#c8e8ff', size:11, shadow:true });
+      if (msgRevealed >= msgText.length) {
+        if ((G_TICK%28)<18) drawText('▼', lp.x+lp.w-14, lp.y+lp.h-14, { color:PAL.ACCENT2, size:8 });
+      }
+    }
+
+    // ── Action menu ───────────────────────────────────────────
+    const mp = { x:4, y:238, w:W-8, h:78 };
+    fr(mp.x, mp.y, mp.w, mp.h, PAL.PANEL2);
+    sr(mp.x, mp.y, mp.w, mp.h, PAL.BORDER_HI, 1);
+
+    if (phase === 'choose') {
+      const menuLabels = isTrainer ? ['FIGHT','----','RUN'] : ['FIGHT','BALL','RUN'];
+      menuLabels.forEach((lbl, i) => {
+        const ix = mp.x + 12 + i*150, iy = mp.y+18;
+        const sel = i===cursor;
+        const disabled = isTrainer && i === 1;
+        fr(ix-4, iy-4, 140, 48, sel ? '#0d2233' : '#080e18');
+        sr(ix-4, iy-4, 140, 48, sel ? PAL.ACCENT : PAL.BORDER, 1);
+        drawText(lbl, ix+66, iy+14, { color: disabled ? PAL.TEXT_DIM : sel ? PAL.GOLD : PAL.TEXT, size:10, align:'center', shadow:sel&&!disabled });
+      });
+      drawText('↑↓ Select   Z Confirm', mp.x+8, mp.y+6, { color:PAL.TEXT_DIM, size:6 });
+    }
+
+    if (phase === 'move_menu') {
+      drawText('Choose a move:  X Back', mp.x+8, mp.y+6, { color:PAL.TEXT_DIM, size:6 });
+      fighter.moves.forEach((mv, i) => {
+        const col2 = i%2, row2 = Math.floor(i/2);
+        const ix = mp.x+8+col2*232, iy = mp.y+18+row2*28;
+        const sel = i===moveCursor;
+        fr(ix-2, iy-2, 224, 24, sel?'#0d2233':'#080e18');
+        sr(ix-2, iy-2, 224, 24, sel?PAL.ACCENT:PAL.BORDER, 1);
+        drawText(mv.name, ix+4, iy+2, { color:sel?'#c8e8ff':PAL.TEXT_DIM, size:9 });
+        drawTypeBadge(mv.type, ix+4, iy+12);
+        const pp2 = mv.ppLeft !== undefined ? mv.ppLeft : mv.pp;
+        drawText(`PP:${pp2}`, ix+218, iy+6, { color:PAL.TEXT_DIM, size:6, align:'right' });
+      });
+    }
+
+    if (phase === 'catch') {
+      const wx2 = W/2-16, wy = 238;
+      const bob = (G_TICK%8<4 && shakes < shakesNeeded) ? Math.sin(G_TICK*0.4)*4 : 0;
+      ctx.fillStyle = '#cc3333';
+      ctx.beginPath(); ctx.arc(wx2+16, wy+16+bob, 14, Math.PI, 0); ctx.fill();
+      ctx.fillStyle = '#eeeeee';
+      ctx.beginPath(); ctx.arc(wx2+16, wy+16+bob, 14, 0, Math.PI); ctx.fill();
+      fr(wx2+2, wy+14+Math.round(bob), 28, 4, '#222');
+      sr(wx2+2, wy+2+Math.round(bob), 28, 28, '#999', 1);
+      for (let i=0; i<4; i++) {
+        const dx=W/2-24+i*16, dy=wy+46;
+        fr(dx, dy, 10, 10, i<shakes?PAL.GOLD:PAL.PANEL); sr(dx,dy,10,10,PAL.BORDER,1);
+      }
+      if (shakes >= shakesNeeded)
+        drawText(caughtSuccess?'Caught!':'Broke free!', W/2, wy+62,
+          { color:caughtSuccess?PAL.GOLD:PAL.TEXT_RED, size:8, align:'center', shadow:true });
+    }
+
+    if (phase === 'level_up') {
+      const bx2=60, by3=90, bw2=360, bh2=130;
+      fr(bx2,by3,bw2,bh2,PAL.PANEL);
+      sr(bx2,by3,bw2,bh2,PAL.GOLD,2);
+      drawText('LEVEL UP!', bx2+bw2/2, by3+14, { color:PAL.GOLD, size:12, align:'center', shadow:true });
+      drawText(levelUpMsg, bx2+bw2/2, by3+42, { color:PAL.TEXT, size:9, align:'center' });
+      drawText(`HP:${fighter.maxHp}  ATK:${fighter.atk}  DEF:${fighter.def}  SPD:${fighter.spd}`,
+        bx2+bw2/2, by3+66, { color:PAL.TEXT_DIM, size:7, align:'center' });
+      drawText('[ Z ] Continue', bx2+bw2/2, by3+98, { color:PAL.ACCENT2, size:7, align:'center' });
+    }
+  }
+
+  return { enter, update, render };
+})();
+
+STATES.battle = battleState;
+
+// ============================================================
+// PART 5 — Searchburg, Gym 1, Mart, Badge Case
+// ============================================================
+
+// ── New species ───────────────────────────────────────────────
+SPECIES.Seekrow = {
+  type1:'Search', type2:'AI',
+  baseHp:42, baseAtk:12, baseDef:9, baseSpd:14,
+  catchRate:90, xpYield:68,
+  learnset:[
+    {lv:1,  move:{name:'Query',      type:'Search',   power:35, pp:30, ppLeft:30}},
+    {lv:1,  move:{name:'Peck',       type:'Hardware', power:25, pp:40, ppLeft:40}},
+    {lv:4,  move:{name:'Smart Scan', type:'Search',   power:45, pp:20, ppLeft:20}},
+    {lv:7,  move:{name:'AI Talon',   type:'AI',       power:50, pp:15, ppLeft:15}},
+    {lv:10, move:{name:'Deep Search',type:'Search',   power:65, pp:10, ppLeft:10}},
+  ],
+};
+SPECIES.Findrake = {
+  type1:'Search',
+  baseHp:50, baseAtk:16, baseDef:12, baseSpd:12,
+  catchRate:50, xpYield:90,
+  learnset:[
+    {lv:1,  move:{name:'Find',       type:'Search',   power:35, pp:30, ppLeft:30}},
+    {lv:1,  move:{name:'Slash',      type:'Hardware', power:35, pp:25, ppLeft:25}},
+    {lv:5,  move:{name:'Index Claw', type:'Search',   power:55, pp:20, ppLeft:20}},
+    {lv:9,  move:{name:'Web Crawl',  type:'Browser',  power:45, pp:20, ppLeft:20}},
+    {lv:13, move:{name:'Rank Storm', type:'Search',   power:80, pp:10, ppLeft:10}},
+  ],
+};
+
+// ── Searchburg map (20×15) ────────────────────────────────────
+MAPS.searchburg = {
+  name: 'Searchburg',
+  w: 20, h: 15,
+  tiles: [
+    mkRow('TTTTTTTTTTTTTTTTTTTT'),  // row 0  (20 T's)
+    mkRow('T..................T'),   // row 1  (T+18 dots+T = 20)
+    mkRow('T.BBBB.......BBBB..T'),   // row 2  center cols2-5, mart cols13-16
+    mkRow('T.BFFB.......BFFB..T'),   // row 3
+    mkRow('T.BDDB.......BDDB..T'),   // row 4  center doors:3,4; mart doors:14,15
+    mkRow('T..................T'),   // row 5
+    mkRow('T.....WWWWW........T'),  // row 6  gym building top (cols 6-10)
+    mkRow('T.....WFFFW........T'),  // row 7
+    mkRow('T.....WFFFW........T'),  // row 8
+    mkRow('T.....WDDWW........T'),  // row 9  gym doors at cols 7,8
+    mkRow('T..................T'),   // row 10
+    mkRow('T...f.......f......T'),  // row 11
+    mkRow('TgGGGGggGGGGggGGGGgT'),  // row 12  tall grass (19 interior + 2 borders = 21? let me count: T+g+GGGG+gg+GGGG+gg+GGGG+g+T=1+1+4+2+4+2+4+1+1=20)
+    mkRow('T..................T'),   // row 13  (player arrives here from route1)
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 14  gap at cols 9-10 (9+2+9=20)
+  ],
+  exits: [
+    { x: 9,  y: 14, toMap: 'route1', toX: 9,  toY: 1 },
+    { x: 10, y: 14, toMap: 'route1', toX: 10, toY: 1 },
+    { x: 3,  y: 4,  toMap: 'center_interior', toX: 4, toY: 5 },
+    { x: 4,  y: 4,  toMap: 'center_interior', toX: 5, toY: 5 },
+    { x: 14, y: 4,  toMap: 'mart_interior',   toX: 4, toY: 5 },
+    { x: 15, y: 4,  toMap: 'mart_interior',   toX: 5, toY: 5 },
+    { x: 7,  y: 9,  toMap: 'gym1_interior',   toX: 6, toY: 10 },
+    { x: 8,  y: 9,  toMap: 'gym1_interior',   toX: 7, toY: 10 },
+  ],
+  playerStart: { x: 9, y: 13 },
+  npcs: [
+    { id:'npc_sb1', x:12, y:5, dir:2, color:'#88bbff',
+      script:["Searchburg! The city of indexed knowledge.","The Gym Leader Scout Searcher awaits challengers."] },
+    { id:'npc_sb2', x:5, y:11, dir:2, color:'#ffaa88',
+      script:["Tip: The Googlimon Center heals your whole team for free!"] },
+    { id:'npc_sb3', x:17, y:11, dir:2, color:'#aaffaa',
+      script:["The Gym uses Search-type Googlimon. Watch out!","Press B anytime to open your Badge Case!"] },
+  ],
+};
+
+// ── Googlimon Center interior (10×8) ─────────────────────────
+MAPS.center_interior = {
+  name: 'Googlimon Center',
+  w: 10, h: 8,
+  tiles: [
+    mkRow('WWWWWWWWWW'),  // 10 W's
+    mkRow('WFCCCCCCFW'),  // counter at cols 2-7
+    mkRow('WFFFFFFFFW'),  // W+8F+W = 10
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFDFFFW'),  // door at col 5
+    mkRow('WWWWWWWWWW'),
+  ],
+  exits: [{ x:5, y:6, toMap:'searchburg', toX:3, toY:5 }],
+  playerStart: { x:5, y:5 },
+  npcs: [
+    { id:'nurse', x:5, y:1, dir:2, color:'#ffbbcc',
+      script:['Welcome to the Googlimon Center!','Your Googlimon have been healed!','We hope to see you again!'] },
+  ],
+};
+
+// ── Mart interior (10×8) ─────────────────────────────────────
+MAPS.mart_interior = {
+  name: 'Mart',
+  w: 10, h: 8,
+  tiles: [
+    mkRow('WWWWWWWWWW'),
+    mkRow('WFCCCCCCFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFDFFFW'),  // door at col 5
+    mkRow('WWWWWWWWWW'),
+  ],
+  exits: [{ x:5, y:6, toMap:'searchburg', toX:14, toY:5 }],
+  playerStart: { x:5, y:5 },
+  npcs: [
+    { id:'mart_clerk', x:5, y:1, dir:2, color:'#ffffaa',
+      script:['Welcome to the Mart!','Face me and press Z to shop.'] },
+  ],
+};
+
+// ── Gym 1 interior (14×12) ───────────────────────────────────
+MAPS.gym1_interior = {
+  name: "Scout Searcher's Gym",
+  w: 14, h: 12,
+  tiles: [
+    mkRow('WWWWWWWWWWWWWW'),  // row 0   (14 W's)
+    mkRow('WFFFFFFFFFFFFW'),  // row 1   (W+12F+W = 14)
+    mkRow('WFFFFFFFFFFFFW'),  // row 2
+    mkRow('WWWWWFFFWWWWWW'),  // row 3   barrier: gap at cols 5-7
+    mkRow('WFFFFFFFFFFFFW'),  // row 4
+    mkRow('WFFFFFFFFFFFFW'),  // row 5
+    mkRow('WWWWWWWWWWFFWW'),  // row 6   barrier: gap at cols 10-11
+    mkRow('WFFFFFFFFFFFFW'),  // row 7
+    mkRow('WFFFFFFFFFFFFW'),  // row 8
+    mkRow('WFFFFFFFFFFFFW'),  // row 9
+    mkRow('WFFFFFFFFFFFFW'),  // row 10
+    mkRow('WWWWWWDWWWWWWW'),  // row 11  door at col 6
+  ],
+  exits: [{ x:6, y:11, toMap:'searchburg', toX:7, toY:10 }],
+  playerStart: { x:6, y:10 },
+  npcs: [
+    { id:'gym_trainer_1', x:9, y:7, dir:2, color:'#cc8833',
+      trainerName:'Trainer Kim', isTrainer:true, defeated:false,
+      team:[ generateWild('Scoutgle', 7) ],
+      reward:200,
+      script:["Halt! You need to get past me first!"],
+      defeatScript:["...I underestimated you. Pass."] },
+    { id:'gym_trainer_2', x:4, y:4, dir:2, color:'#cc4488',
+      trainerName:'Trainer Alex', isTrainer:true, defeated:false,
+      team:[ generateWild('Seekrow', 8), generateWild('Pixmouse', 6) ],
+      reward:300,
+      script:["Scout Searcher is not to be disturbed!"],
+      defeatScript:["How could I lose...?"] },
+    { id:'scout_searcher', x:6, y:1, dir:2, color:'#ffcc44',
+      trainerName:'Scout Searcher', isTrainer:true, defeated:false,
+      team:[ generateWild('Scoutgle', 10), generateWild('Seekrow', 11), generateWild('Findrake', 13) ],
+      reward:1500,
+      script:["I am Scout Searcher — keeper of the Index!","No query goes unanswered. Prepare yourself!"],
+      defeatScript:["Remarkable... you have truly indexed my secrets.","Accept the Index Badge, and this TM!","Press B to view your Badge Case."] },
+  ],
+};
+
+// ── Mart State ────────────────────────────────────────────────
+const MART_ITEMS = [
+  { name:'Cache Ball',   price:200, key:'Cache Ball'   },
+  { name:'Browser Ball', price:600, key:'Browser Ball' },
+  { name:'Data Shard',   price:300, key:'Data Shard'   },
+  { name:'Byte Potion',  price:150, key:'Byte Potion'  },
+];
+
+const martState = (function() {
+  let cursor = 0;
+
+  function enter() { cursor = 0; }
+
+  function update() {
+    if (inputCancel()) { setState('overworld', PLAYER.mapId); return; }
+    const n = MART_ITEMS.length + 1; // +1 for Cancel
+    if (pressed('ArrowUp'))   cursor = (cursor+n-1)%n;
+    if (pressed('ArrowDown')) cursor = (cursor+1)%n;
+    if (inputConfirm()) {
+      if (cursor === MART_ITEMS.length) { setState('overworld', PLAYER.mapId); return; }
+      const item = MART_ITEMS[cursor];
+      if (SAVE.credits >= item.price) {
+        SAVE.credits -= item.price;
+        if (!SAVE.items[item.key]) SAVE.items[item.key] = 0;
+        SAVE.items[item.key]++;
+      }
+    }
+  }
+
+  function render() {
+    fr(0, 0, W, H, PAL.BG);
+    drawPanel(4, 4, W-8, H-8, { bg:PAL.PANEL, outer:PAL.ACCENT, inner:PAL.BORDER });
+    drawText('MART', W/2, 16, { color:PAL.GOLD, size:11, align:'center', shadow:true });
+    drawText(`Credits: ${SAVE.credits}`, W-16, 16, { color:PAL.ACCENT, size:7, align:'right' });
+
+    MART_ITEMS.forEach((item, i) => {
+      const iy = 44 + i*30;
+      const sel = i === cursor;
+      fr(20, iy-2, W-40, 24, sel ? '#0d2233' : '#080e18');
+      sr(20, iy-2, W-40, 24, sel ? PAL.ACCENT : PAL.BORDER, 1);
+      drawText(item.name, 32, iy+4, { color: sel ? PAL.TEXT : PAL.TEXT_DIM, size:8 });
+      drawText(`${item.price} cr`, W-32, iy+4, { color: SAVE.credits >= item.price ? PAL.GOLD : PAL.TEXT_RED, size:7, align:'right' });
+      const owned = SAVE.items[item.key] || 0;
+      drawText(`x${owned}`, W-80, iy+4, { color:PAL.TEXT_DIM, size:6, align:'right' });
+    });
+
+    const cy = 44 + MART_ITEMS.length*30;
+    const selC = cursor === MART_ITEMS.length;
+    fr(20, cy-2, W-40, 24, selC ? '#0d2233' : '#080e18');
+    sr(20, cy-2, W-40, 24, selC ? PAL.ACCENT : PAL.BORDER, 1);
+    drawText('Cancel', 32, cy+4, { color: selC ? PAL.TEXT : PAL.TEXT_DIM, size:8 });
+
+    drawText('↑↓ Navigate   Z Buy / Confirm   X Cancel', W/2, H-12, { color:PAL.TEXT_DIM, size:6, align:'center' });
+  }
+
+  return { enter, update, render };
+})();
+STATES.mart = martState;
+
+// ── Badge Case State ──────────────────────────────────────────
+const badgeCaseState = (function() {
+  const BADGE_INFO = [
+    { name:'Index Badge', desc:'Awarded by Scout Searcher.', color:'#f5c542' },
+    { name:'Link Badge',  desc:'Awarded by the next Gym Leader.', color:'#00aacc' },
+    { name:'Cache Badge', desc:'Awarded by the next Gym Leader.', color:'#44cc77' },
+    { name:'Query Badge', desc:'Awarded by the next Gym Leader.', color:'#ff4455' },
+  ];
+
+  function enter() {}
+
+  function update() {
+    if (inputCancel() || inputConfirm() || pressed('KeyB')) {
+      setState('overworld', PLAYER.mapId);
+    }
+  }
+
+  function render() {
+    fr(0, 0, W, H, PAL.BG);
+    drawPanel(4, 4, W-8, H-8, { bg:PAL.PANEL, outer:PAL.GOLD, inner:PAL.BORDER });
+    drawText('BADGE CASE', W/2, 16, { color:PAL.GOLD, size:11, align:'center', shadow:true });
+
+    BADGE_INFO.forEach((bi, i) => {
+      const col2 = i % 2, row2 = Math.floor(i/2);
+      const bx2 = 24 + col2*228, by2 = 48 + row2*100;
+      const earned = SAVE.badges.includes(bi.name);
+      fr(bx2, by2, 200, 80, earned ? '#0a1a28' : '#060c14');
+      sr(bx2, by2, 200, 80, earned ? bi.color : PAL.BORDER, earned ? 2 : 1);
+      // Badge gem
+      const gem = { x: bx2+24, y: by2+28 };
+      fr(gem.x-12, gem.y-12, 24, 24, earned ? bi.color : PAL.TEXT_DIM);
+      fr(gem.x-8,  gem.y-8,  16, 16, earned ? bi.color+'cc' : '#111');
+      if (earned) {
+        ctx.fillStyle = '#ffffff44';
+        ctx.beginPath(); ctx.arc(gem.x-3, gem.y-3, 5, 0, Math.PI*2); ctx.fill();
+      }
+      drawText(bi.name, bx2+50, by2+14, { color: earned ? bi.color : PAL.TEXT_DIM, size:8, shadow:earned });
+      drawText(earned ? bi.desc : '???', bx2+50, by2+32, { color: PAL.TEXT_DIM, size:6 });
+      if (earned) drawText('✓ Earned', bx2+50, by2+52, { color:PAL.GOLD, size:6 });
+    });
+
+    drawText(`Badges: ${SAVE.badges.length} / ${BADGE_INFO.length}`, W/2, H-28, { color:PAL.ACCENT, size:7, align:'center' });
+    drawText('[ Z / X / B ] Close', W/2, H-14, { color:PAL.TEXT_DIM, size:6, align:'center' });
+  }
+
+  return { enter, update, render };
+})();
+STATES.badge_case = badgeCaseState;
+
+// ============================================================
+// CONTROLS OVERLAY STATE
+// ============================================================
+let controlsPrevState = null;
+
+const controlsState = (function() {
+  const BINDINGS = [
+    { key: 'Arrow Keys',  action: 'Move / Navigate menus' },
+    { key: 'Z',           action: 'Confirm / Talk / Interact' },
+    { key: 'X or Esc',   action: 'Cancel / Go Back' },
+    { key: 'Enter',       action: 'Open Menu' },
+    { key: 'F1  or  ?',  action: 'Show / Hide Controls' },
+    { key: 'B',           action: 'Open Badge Case' },
+  ];
+
+  function enter() { flushInput(); }
+
+  function update() {
+    if (pressed('F1') || pressed('Slash') || pressed('Escape') ||
+        pressed('KeyX') || inputConfirm()) {
+      setState(controlsPrevState || 'title');
+    }
+  }
+
+  function render() {
+    // Dim the world behind
+    if (controlsPrevState && STATES[controlsPrevState]) {
+      STATES[controlsPrevState].render();
+    } else {
+      fr(0, 0, W, H, PAL.BG);
+    }
+    // Overlay backdrop
+    ctx.fillStyle = 'rgba(2,6,16,0.88)';
+    ctx.fillRect(0, 0, W, H);
+
+    const bx = W/2-180, by = 30, bw = 360, bh = 46 + BINDINGS.length * 26 + 14;
+    drawPanel(bx, by, bw, bh, { bg: 'rgba(5,12,28,0.96)', outer: PAL.GOLD, inner: PAL.BORDER });
+
+    drawText('CONTROLS', bx + bw/2, by + 10, { color: PAL.GOLD, size: 12, align: 'center', shadow: true });
+    fr(bx + 12, by + 28, bw - 24, 1, PAL.BORDER);
+
+    BINDINGS.forEach(({ key, action }, i) => {
+      const ry = by + 36 + i * 26;
+      // Key badge
+      fr(bx + 12, ry, 110, 20, '#0a1828');
+      sr(bx + 12, ry, 110, 20, PAL.ACCENT, 1);
+      drawText(key, bx + 67, ry + 3, { color: PAL.ACCENT, size: 8, align: 'center', shadow: true });
+      // Action
+      drawText(action, bx + 132, ry + 3, { color: '#c8e8ff', size: 8, shadow: true });
+    });
+
+    drawText('Press  Z / X / Esc  to close', bx + bw/2, by + bh - 14,
+      { color: PAL.TEXT_DIM, size: 7, align: 'center' });
+  }
+
+  return { enter, update, render };
+})();
+STATES.controls = controlsState;
+
+// ============================================================
+// PART 6 — MENU SYSTEM, GOOGLIDEX, SAVE/LOAD
+// ============================================================
+
+// ── Dex species list (150 slots) ─────────────────────────────
+const DEX_LIST = [
+  'Pixmouse','Scoutgle','Seekrow','Findrake',
+  'Chirper','Mousenet','Bugbyte','Lockup',
+];
+while (DEX_LIST.length < 150) DEX_LIST.push('');
+
+// ── Sprite URL builder (assets/sprites/001_querycub_front.png) ─
+function getSpriteUrl(name, side) {
+  const idx = DEX_LIST.indexOf(name);
+  if (idx === -1) return null;
+  const num = String(idx + 1).padStart(3, '0');
+  const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return `./assets/sprites/${num}_${slug}_${side}.png`;
+}
+
+function tryLoadBattleSprites(name) {
+  const fUrl = getSpriteUrl(name, 'front');
+  const bUrl = getSpriteUrl(name, 'back');
+  if (fUrl) loadSprite(`${name}_front`, fUrl);
+  if (bUrl) loadSprite(`${name}_back`,  bUrl);
+}
+
+// ── Draw sprite or fall back to canvas primitive ──────────────
+function drawBattleSprite(name, cx, cy, side, size) {
+  const key = `${name}_${side}`;
+  const img = getSprite(key);
+  if (img) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, cx - size/2, cy - size/2, size, size);
+    return;
+  }
+  // Fallback: generic silhouette
+  ctx.fillStyle = TYPE_COL[(SPECIES[name] && SPECIES[name].type1) || 'Search'] + 'aa';
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.38, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff55';
+  ctx.beginPath();
+  ctx.arc(cx - size*0.08, cy - size*0.1, size * 0.12, 0, Math.PI * 2);
+  ctx.fill();
+  drawText(name.slice(0, 8), cx, cy + size*0.35, { color: PAL.TEXT, size: 7, align: 'center', shadow: true });
+}
+
+// ── Global badge info (8 gyms) ───────────────────────────────
+const ALL_BADGES = [
+  { name:'Index Badge',   desc:'Scout Searcher — Searchburg',  color:'#f5c542' },
+  { name:'Link Badge',    desc:'??? — ???',                    color:'#00aacc' },
+  { name:'Cache Badge',   desc:'??? — ???',                    color:'#44cc77' },
+  { name:'Query Badge',   desc:'??? — ???',                    color:'#ff4455' },
+  { name:'Stream Badge',  desc:'??? — ???',                    color:'#cc44ff' },
+  { name:'Circuit Badge', desc:'??? — ???',                    color:'#ff8833' },
+  { name:'Quantum Badge', desc:'??? — ???',                    color:'#44aaff' },
+  { name:'Cosmic Badge',  desc:'Champion\'s Badge',            color:'#aaaaff' },
+];
+
+// ── Save / Load ───────────────────────────────────────────────
+const SAVE_KEY = 'googlimon_v1';
+
+function syncTrainerState() {
+  Object.values(MAPS).forEach(m => {
+    if (!m.npcs) return;
+    m.npcs.forEach(n => {
+      if (n.isTrainer && SAVE.trainerDefeated.includes(n.id)) n.defeated = true;
+    });
+  });
+}
+
+function saveGame() {
+  if (!SAVE.starterChosen) return false;
+  try {
+    const data = {
+      playerName: SAVE.playerName,
+      starterChosen: SAVE.starterChosen,
+      dex: SAVE.dex,
+      credits: SAVE.credits,
+      badges: SAVE.badges,
+      items: SAVE.items,
+      trainerDefeated: SAVE.trainerDefeated,
+      party: PLAYER.party.map(p => {
+        const o = Object.assign({}, p);
+        o.revealedStats = [];
+        return o;
+      }),
+      mapId: PLAYER.mapId,
+      px: PLAYER.x, py: PLAYER.y, pd: PLAYER.dir,
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    return true;
+  } catch(e) { return false; }
+}
+
+function loadGame() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    SAVE.playerName      = d.playerName  || 'Player';
+    SAVE.starterChosen   = d.starterChosen || false;
+    SAVE.dex             = d.dex  || {};
+    SAVE.credits         = d.credits != null ? d.credits : 500;
+    SAVE.badges          = d.badges  || [];
+    SAVE.items           = d.items   || {};
+    SAVE.trainerDefeated = d.trainerDefeated || [];
+    PLAYER.party = (d.party || []).map(p =>
+      Object.assign({}, p, { revealedStats: new Set() })
+    );
+    PLAYER.mapId = d.mapId || 'cache_town';
+    PLAYER.x = d.px != null ? d.px : 10;
+    PLAYER.y = d.py != null ? d.py : 7;
+    PLAYER.dir = d.pd != null ? d.pd : 2;
+    syncTrainerState();
+    return true;
+  } catch(e) { return false; }
+}
+
+// ── Global notification ───────────────────────────────────────
+const NOTIF = { text: '', timer: 0 };
+function showNotif(text) { NOTIF.text = text; NOTIF.timer = 150; }
+
+// ── Menu State ────────────────────────────────────────────────
+const menuState = (function() {
+  let screen = 'main';
+  let cursor = 0;
+  let dexOffset = 0;
+  let partyCursor = 0;
+  let partyDetailIdx = 0;
+  let bagCat = 0;
+  let bagCursor = 0;
+  let bagUseCursor = 0;
+  let bagUseItem = null;
+  let confirmCursor = 0;
+
+  const MAIN_OPTS = ['PARTY','GOOGLIDEX','BAG','BADGES','SAVE','QUIT'];
+  const BAG_CATS  = ['Balls','Medicine','Key Items'];
+  const BAG_KEYS  = [
+    ['Cache Ball','Browser Ball'],
+    ['Byte Potion','Data Shard'],
+    ['TM: Search Pulse'],
+  ];
+
+  function enter() { screen = 'main'; cursor = 0; flushInput(); }
+
+  function getCatItems() {
+    return BAG_KEYS[bagCat].filter(k => (SAVE.items[k]||0) > 0)
+      .map(k => ({ key: k, qty: SAVE.items[k] }));
+  }
+
+  function tryUseItem(item, monIdx) {
+    const mon = PLAYER.party[monIdx];
+    if (!mon) return false;
+    if (item.key === 'Byte Potion') {
+      if (mon.hp >= mon.maxHp) return false;
+      mon.hp = Math.min(mon.maxHp, mon.hp + 30);
+    } else if (item.key === 'Data Shard') {
+      (mon.moves||[]).forEach(m => { if (m && typeof m === 'object' && m.ppLeft !== undefined) m.ppLeft = m.pp; });
+    } else {
+      return false;
+    }
+    SAVE.items[item.key]--;
+    if (!SAVE.items[item.key]) delete SAVE.items[item.key];
+    return true;
+  }
+
+  function update() {
+    if (inputCancel()) {
+      if (screen === 'main') { setState('overworld', PLAYER.mapId); return; }
+      if (screen === 'party_detail') { screen = 'party'; return; }
+      if (screen === 'bag_use') { screen = 'bag'; bagCursor = 0; return; }
+      screen = 'main'; cursor = 0; return;
+    }
+
+    if (screen === 'main') {
+      const n = MAIN_OPTS.length;
+      if (pressed('ArrowUp'))   cursor = (cursor+n-1)%n;
+      if (pressed('ArrowDown')) cursor = (cursor+1)%n;
+      if (inputConfirm()) {
+        const opt = MAIN_OPTS[cursor];
+        if (opt === 'PARTY')    { screen='party';   partyCursor=0; }
+        if (opt === 'GOOGLIDEX'){ screen='dex';     dexOffset=0; }
+        if (opt === 'BAG')      { screen='bag';     bagCat=0; bagCursor=0; }
+        if (opt === 'BADGES')   { screen='badges'; }
+        if (opt === 'SAVE')     { screen='save_confirm'; confirmCursor=1; }
+        if (opt === 'QUIT')     { screen='quit_confirm'; confirmCursor=1; }
+      }
+    }
+
+    else if (screen === 'party') {
+      const n = PLAYER.party.length || 1;
+      if (pressed('ArrowUp'))   partyCursor = (partyCursor+n-1)%n;
+      if (pressed('ArrowDown')) partyCursor = (partyCursor+1)%n;
+      if (inputConfirm() && PLAYER.party.length) { partyDetailIdx = partyCursor; screen = 'party_detail'; }
+    }
+
+    else if (screen === 'dex') {
+      const cols = 3;
+      if (pressed('ArrowUp'))   dexOffset = Math.max(0, dexOffset - cols);
+      if (pressed('ArrowDown')) dexOffset = Math.min(DEX_LIST.length - cols, dexOffset + cols);
+    }
+
+    else if (screen === 'bag') {
+      if (pressed('ArrowLeft'))  { bagCat = (bagCat+2)%3; bagCursor=0; }
+      if (pressed('ArrowRight')) { bagCat = (bagCat+1)%3; bagCursor=0; }
+      const items = getCatItems();
+      if (items.length) {
+        if (pressed('ArrowUp'))   bagCursor = (bagCursor+items.length-1)%items.length;
+        if (pressed('ArrowDown')) bagCursor = (bagCursor+1)%items.length;
+      }
+      if (inputConfirm() && items.length) {
+        bagUseItem = items[bagCursor];
+        bagUseCursor = 0;
+        screen = 'bag_use';
+      }
+    }
+
+    else if (screen === 'bag_use') {
+      const n = PLAYER.party.length || 1;
+      if (pressed('ArrowUp'))   bagUseCursor = (bagUseCursor+n-1)%n;
+      if (pressed('ArrowDown')) bagUseCursor = (bagUseCursor+1)%n;
+      if (inputConfirm() && bagUseItem) {
+        if (tryUseItem(bagUseItem, bagUseCursor)) { screen = 'bag'; bagCursor = 0; }
+      }
+    }
+
+    else if (screen === 'save_confirm' || screen === 'quit_confirm') {
+      if (pressed('ArrowLeft'))  confirmCursor = 0;
+      if (pressed('ArrowRight')) confirmCursor = 1;
+      if (inputConfirm()) {
+        if (confirmCursor === 0) {
+          if (screen === 'save_confirm') { saveGame(); showNotif('GAME SAVED'); screen = 'main'; }
+          else { setState('title'); return; }
+        } else {
+          screen = 'main';
+        }
+      }
+    }
+  }
+
+  // ── Sub-screen renderers ──────────────────────────────────────
+
+  function dim() { ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fillRect(0,0,W,H); }
+
+  function renderMain() {
+    dim();
+    const pw=220, ph=32+MAIN_OPTS.length*28+20;
+    const px=W/2-pw/2, py=H/2-ph/2;
+    drawPanel(px,py,pw,ph,{bg:PAL.PANEL,outer:PAL.ACCENT,inner:PAL.BORDER});
+    drawText('MENU', px+pw/2, py+10, {color:PAL.GOLD,size:10,align:'center',shadow:true});
+    MAIN_OPTS.forEach((opt,i) => {
+      const sel = i===cursor;
+      const oy = py+32+i*28;
+      if (sel) fr(px+10,oy-3,pw-20,22,'#0d2233');
+      drawText((sel?'► ':' ')+opt, px+18, oy+2, {color:sel?PAL.GOLD:PAL.TEXT,size:8});
+    });
+    drawText('Z Confirm   X Close', px+pw/2, py+ph-10, {color:PAL.TEXT_DIM,size:6,align:'center'});
+  }
+
+  function renderParty() {
+    dim();
+    drawPanel(4,4,W-8,H-8,{bg:PAL.PANEL,outer:PAL.ACCENT,inner:PAL.BORDER});
+    drawText('PARTY', W/2, 14, {color:PAL.GOLD,size:10,align:'center',shadow:true});
+    drawText(`${PLAYER.party.length}/6`, W-14, 14, {color:PAL.TEXT_DIM,size:7,align:'right'});
+    if (!PLAYER.party.length) {
+      drawText('No Googlimon in party.', W/2, H/2, {color:PAL.TEXT_DIM,size:8,align:'center'});
+    }
+    PLAYER.party.forEach((mon,i) => {
+      const sel = i===partyCursor;
+      const iy = 34+i*42;
+      fr(12,iy,W-24,38, sel?'#0d2233':'#080e18');
+      sr(12,iy,W-24,38, sel?PAL.ACCENT:PAL.BORDER,1);
+      drawTypeBadge(mon.type1||mon.type, 20, iy+10);
+      drawText(mon.name, 64, iy+6,  {color:sel?PAL.TEXT:PAL.TEXT_DIM,size:8});
+      drawText(`Lv.${mon.level}`, 64, iy+18, {color:PAL.TEXT_DIM,size:6});
+      drawHPBar(175,iy+10,W-200,8,mon.hp,mon.maxHp);
+      drawText(`${mon.hp}/${mon.maxHp}`, W-16,iy+10,{color:PAL.TEXT_DIM,size:6,align:'right'});
+    });
+    drawText('↑↓ Select   Z Details   X Back', W/2, H-10, {color:PAL.TEXT_DIM,size:6,align:'center'});
+  }
+
+  function renderPartyDetail() {
+    const mon = PLAYER.party[partyDetailIdx];
+    if (!mon) { screen='party'; return; }
+    dim();
+    drawPanel(4,4,W-8,H-8,{bg:PAL.PANEL,outer:PAL.ACCENT,inner:PAL.BORDER});
+    drawText(mon.name, 14, 12, {color:PAL.TEXT,size:10,shadow:true});
+    drawText(`Lv.${mon.level}`, W-14, 12, {color:PAL.TEXT_DIM,size:8,align:'right'});
+    drawTypeBadge(mon.type1||mon.type, 14, 28);
+    if (mon.type2) drawTypeBadge(mon.type2, 58, 28);
+    // HP
+    drawText('HP', 14, 50, {color:PAL.TEXT_DIM,size:7});
+    drawHPBar(36, 48, W-80, 9, mon.hp, mon.maxHp);
+    drawText(`${mon.hp}/${mon.maxHp}`, W-14, 50, {color:PAL.TEXT_DIM,size:6,align:'right'});
+    // Stats row
+    const stats = [['ATK',mon.atk],['DEF',mon.def],['SPD',mon.spd]];
+    stats.forEach(([l,v],i) => drawText(`${l} ${v}`, 14+i*152, 66, {color:PAL.ACCENT,size:7}));
+    // XP bar
+    const xpRat = mon.xpToNext > 0 ? (mon.xp||0)/mon.xpToNext : 0;
+    drawText('XP', 14, 80, {color:PAL.TEXT_DIM,size:7});
+    drawBar(36,78,W-80,5, xpRat, PAL.EXP);
+    drawText(`${mon.xp||0}/${mon.xpToNext||'—'}`, W-14, 80, {color:PAL.TEXT_DIM,size:6,align:'right'});
+    // Moves
+    drawText('── MOVES ──', W/2, 96, {color:PAL.GOLD,size:7,align:'center'});
+    (mon.moves||[]).slice(0,4).forEach((mv,i) => {
+      const mname = typeof mv==='string' ? mv : (mv.name||'—');
+      const mtype = typeof mv==='object' ? mv.type : (mon.type1||mon.type);
+      const mpp   = typeof mv==='object' ? `${mv.ppLeft??mv.pp}/${mv.pp}` : '—';
+      const my = 108+i*42;
+      fr(12,my,W-24,38,'#080e18'); sr(12,my,W-24,38,PAL.BORDER,1);
+      drawText(mname, 20, my+6,   {color:PAL.TEXT,size:8});
+      if (typeof mv==='object') drawTypeBadge(mtype, 20, my+18);
+      drawText(`PP:${mpp}`, W-18, my+8, {color:PAL.TEXT_DIM,size:6,align:'right'});
+    });
+    drawText('X Back', W/2, H-10, {color:PAL.TEXT_DIM,size:6,align:'center'});
+  }
+
+  function renderDex() {
+    dim();
+    drawPanel(4,4,W-8,H-8,{bg:PAL.PANEL,outer:PAL.ACCENT,inner:PAL.BORDER});
+    const seen   = Object.values(SAVE.dex).filter(e=>e.seen).length;
+    const caught = Object.values(SAVE.dex).filter(e=>e.caught).length;
+    drawText('GOOGLIDEX', W/2, 12, {color:PAL.GOLD,size:10,align:'center',shadow:true});
+    drawText(`Seen: ${seen}  Caught: ${caught}/150`, W/2, 26, {color:PAL.TEXT_DIM,size:6,align:'center'});
+
+    const cols=3, cellW=Math.floor((W-16)/cols), cellH=28;
+    const rowsVis = Math.floor((H-56)/cellH);
+    const startRow = Math.floor(dexOffset/cols);
+
+    for (let row=0; row<rowsVis; row++) {
+      for (let col=0; col<cols; col++) {
+        const slot = (startRow+row)*cols+col;
+        if (slot>=DEX_LIST.length) break;
+        const name = DEX_LIST[slot];
+        const ent  = name ? SAVE.dex[name] : null;
+        const caught2 = ent && ent.caught;
+        const seen2   = ent && ent.seen;
+        const cx2 = 8+col*cellW, cy2 = 40+row*cellH;
+        fr(cx2, cy2, cellW-2, cellH-2, caught2?'#091a14':'#080e18');
+        if (caught2) sr(cx2, cy2, cellW-2, cellH-2, PAL.HP_HI, 1);
+        drawText(`#${String(slot+1).padStart(3,'0')}`, cx2+4, cy2+4, {color:PAL.TEXT_DIM,size:5});
+        const label = seen2 ? name : '???';
+        drawText(label, cx2+42, cy2+4, {color:caught2?PAL.HP_HI:seen2?PAL.TEXT:PAL.TEXT_DIM,size:6});
+        if (caught2) drawText('✓', cx2+cellW-6, cy2+4, {color:PAL.GOLD,size:6,align:'right'});
+      }
+    }
+    drawText('↑↓ Scroll   X Back', W/2, H-10, {color:PAL.TEXT_DIM,size:6,align:'center'});
+  }
+
+  function renderBag() {
+    dim();
+    drawPanel(4,4,W-8,H-8,{bg:PAL.PANEL,outer:PAL.ACCENT,inner:PAL.BORDER});
+    drawText('BAG', W/2, 12, {color:PAL.GOLD,size:10,align:'center',shadow:true});
+    drawText(`Credits: ${SAVE.credits}`, W-14, 12, {color:PAL.ACCENT,size:7,align:'right'});
+    // Category tabs
+    BAG_CATS.forEach((cat,i) => {
+      const sel = i===bagCat;
+      const tx=10+i*154;
+      fr(tx,28,150,20,sel?'#0d2233':'#080e18');
+      sr(tx,28,150,20,sel?PAL.ACCENT:PAL.BORDER,1);
+      drawText(cat,tx+75,33,{color:sel?PAL.GOLD:PAL.TEXT_DIM,size:7,align:'center'});
+    });
+    // Item list
+    const items = getCatItems();
+    if (!items.length) {
+      drawText('Nothing here.', W/2, H/2, {color:PAL.TEXT_DIM,size:8,align:'center'});
+    }
+    items.forEach((item,i) => {
+      const sel = i===bagCursor;
+      const iy=56+i*28;
+      fr(12,iy,W-24,24,sel?'#0d2233':'#080e18');
+      sr(12,iy,W-24,24,sel?PAL.ACCENT:PAL.BORDER,1);
+      drawText(item.key, 20, iy+5, {color:sel?PAL.TEXT:PAL.TEXT_DIM,size:8});
+      drawText(`x${item.qty}`, W-18, iy+5, {color:PAL.GOLD,size:7,align:'right'});
+    });
+    drawText('←→ Category   ↑↓ Select   Z Use   X Back', W/2, H-10, {color:PAL.TEXT_DIM,size:6,align:'center'});
+  }
+
+  function renderBagUse() {
+    dim();
+    drawPanel(4,4,W-8,H-8,{bg:PAL.PANEL,outer:PAL.ACCENT,inner:PAL.BORDER});
+    drawText(`USE: ${bagUseItem?bagUseItem.key:''}`, W/2, 12, {color:PAL.GOLD,size:10,align:'center',shadow:true});
+    const usable = bagUseItem && (bagUseItem.key==='Byte Potion'||bagUseItem.key==='Data Shard');
+    if (!usable) {
+      drawText("Can't use this outside of battle.", W/2, H/2-8, {color:PAL.TEXT_RED,size:7,align:'center'});
+      drawText('X Back', W/2, H-10, {color:PAL.TEXT_DIM,size:6,align:'center'});
+      return;
+    }
+    drawText('Use on which Googlimon?', W/2, 28, {color:PAL.TEXT_DIM,size:6,align:'center'});
+    PLAYER.party.forEach((mon,i) => {
+      const sel = i===bagUseCursor;
+      const iy=44+i*36;
+      fr(12,iy,W-24,32,sel?'#0d2233':'#080e18');
+      sr(12,iy,W-24,32,sel?PAL.ACCENT:PAL.BORDER,1);
+      drawText(mon.name, 20, iy+4, {color:sel?PAL.TEXT:PAL.TEXT_DIM,size:8});
+      drawHPBar(130,iy+8,W-155,8,mon.hp,mon.maxHp);
+      drawText(`${mon.hp}/${mon.maxHp}`,W-16,iy+8,{color:PAL.TEXT_DIM,size:6,align:'right'});
+    });
+    drawText('↑↓ Select   Z Use   X Back', W/2, H-10, {color:PAL.TEXT_DIM,size:6,align:'center'});
+  }
+
+  function renderBadges() {
+    dim();
+    drawPanel(4,4,W-8,H-8,{bg:PAL.PANEL,outer:PAL.GOLD,inner:PAL.BORDER});
+    drawText('BADGES', W/2, 12, {color:PAL.GOLD,size:10,align:'center',shadow:true});
+    // 4×2 grid of badges
+    ALL_BADGES.forEach((bi,i) => {
+      const col2=i%4, row2=Math.floor(i/4);
+      const bx2=10+col2*116, by2=32+row2*116;
+      const earned = SAVE.badges.includes(bi.name);
+      fr(bx2,by2,110,108, earned?'#0a1a28':'#060c14');
+      sr(bx2,by2,110,108, earned?bi.color:PAL.BORDER, earned?2:1);
+      // Gem
+      const gx=bx2+55, gy=by2+48;
+      fr(gx-16,gy-16,32,32, earned?bi.color:PAL.TEXT_DIM);
+      fr(gx-11,gy-11,22,22, earned?bi.color+'99':'#111');
+      if (earned) {
+        ctx.fillStyle='#ffffff55';
+        ctx.beginPath(); ctx.arc(gx-5,gy-5,7,0,Math.PI*2); ctx.fill();
+      }
+      drawText(bi.name.replace(' Badge',''), bx2+55, by2+6, {color:earned?bi.color:PAL.TEXT_DIM,size:5,align:'center'});
+      if (earned) drawText('✓', bx2+55, by2+92, {color:PAL.GOLD,size:7,align:'center'});
+      else        drawText('—', bx2+55, by2+92, {color:PAL.TEXT_DIM,size:7,align:'center'});
+    });
+    drawText(`Badges: ${SAVE.badges.length}/8   X Back`, W/2, H-10, {color:PAL.TEXT_DIM,size:6,align:'center'});
+  }
+
+  function renderConfirm(title, sub) {
+    dim();
+    const pw=300, ph=104, px=W/2-pw/2, py=H/2-ph/2;
+    drawPanel(px,py,pw,ph,{bg:PAL.PANEL,outer:PAL.ACCENT,inner:PAL.BORDER});
+    drawText(title, px+pw/2, py+14, {color:PAL.TEXT,size:8,align:'center',shadow:true});
+    if (sub) drawText(sub, px+pw/2, py+30, {color:PAL.TEXT_DIM,size:6,align:'center'});
+    ['YES','NO'].forEach((opt,i) => {
+      const sel=i===confirmCursor;
+      const ox=px+60+i*130, oy=py+58;
+      fr(ox-28,oy-6,80,26,sel?'#0d2233':'#080e18');
+      sr(ox-28,oy-6,80,26,sel?PAL.ACCENT:PAL.BORDER,1);
+      drawText(opt, ox+12, oy+2, {color:sel?PAL.GOLD:PAL.TEXT,size:9,align:'center'});
+    });
+  }
+
+  function render() {
+    if (screen==='main')         renderMain();
+    else if (screen==='party')        renderParty();
+    else if (screen==='party_detail') renderPartyDetail();
+    else if (screen==='dex')          renderDex();
+    else if (screen==='bag')          renderBag();
+    else if (screen==='bag_use')      renderBagUse();
+    else if (screen==='badges')       renderBadges();
+    else if (screen==='save_confirm') renderConfirm('Save your game?');
+    else if (screen==='quit_confirm') renderConfirm('Return to title screen?','Unsaved progress will be lost.');
+  }
+
+  return { enter, update, render };
+})();
+STATES.menu = menuState;
+
+// ============================================================
+// GAME LOOP
+// ============================================================
+function loop() {
+  G_TICK++;
+  const s = STATES[currentState];
+  if (s) {
+    s.update();
+    s.render();
+  } else {
+    fr(0, 0, W, H, PAL.BG);
+    drawTextC(`Unknown state: "${currentState}"`, H / 2, { color: PAL.TEXT_RED });
+  }
+  // Global notification banner
+  if (NOTIF.timer > 0) {
+    NOTIF.timer--;
+    const nAlpha = Math.min(1, NOTIF.timer / 20);
+    ctx.globalAlpha = nAlpha;
+    const nw = 192, nh = 24;
+    fr(W/2-nw/2, 4, nw, nh, '#05080f');
+    sr(W/2-nw/2, 4, nw, nh, PAL.GOLD, 2);
+    drawText(NOTIF.text, W/2, 10, { color: PAL.GOLD, size: 10, align: 'center', shadow: true });
+    ctx.globalAlpha = 1;
+  }
+  requestAnimationFrame(loop);
+}
+
+// ── Boot ────────────────────────────────────────────────────
+// F1 / ? opens controls overlay from any state
+document.addEventListener('keydown', e => {
+  if (e.code === 'F1' || e.code === 'Slash') {
+    e.preventDefault();
+    if (currentState !== 'controls') {
+      controlsPrevState = currentState;
+      setState('controls');
+    }
+  }
+});
+
+setState('title');
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>
