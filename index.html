@@ -466,7 +466,7 @@ const Sound = (() => {
   let masterGain = null, sfxGain = null;
   let musicGainA = null, musicGainB = null;
   let activeGainNode = null;
-  let muted = false;
+  let muted = localStorage.getItem('googlimon_muted') === '1';
   let currentTrackName = null;
   let activePlayer = null;
   let trackGen = 0;
@@ -493,6 +493,7 @@ const Sound = (() => {
   function toggleMute() {
     ensureCtx();
     muted = !muted;
+    localStorage.setItem('googlimon_muted', muted ? '1' : '0');
     if (masterGain) masterGain.gain.setTargetAtTime(muted ? 0 : 1, ctx.currentTime, 0.04);
     return muted;
   }
@@ -652,6 +653,7 @@ const Sound = (() => {
   function playTrack(name, { fade = 0.6 } = {}) {
     ensureCtx();
     if (!ctx) return;
+    if (muted && masterGain) masterGain.gain.setValueAtTime(0, ctx.currentTime);
     if (name === currentTrackName) return;
     const def = TRACKS[name];
     if (!def) { stopMusic(); return; }
