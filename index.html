@@ -1057,6 +1057,8 @@ const titleState = (() => {
     if (navUp())   menuCursor = (menuCursor + opts - 1) % opts;
     if (navDown()) menuCursor = (menuCursor + 1) % opts;
 
+    if (pressed('Backquote')) { setState('sprite_debug'); return; }
+
     if (confirmPressed()) {
       if (!hasSave || menuCursor === 0) {
         // CONTINUE (save exists) or START (no save)
@@ -1251,6 +1253,120 @@ const loadingState = (() => {
 })();
 
 STATES.loading = loadingState;
+
+// ============================================================
+// STATE: SPRITE DIAGNOSTIC  (backtick on title screen)
+// ============================================================
+const spriteDebugState = (() => {
+  const ROW_H    = 11;    // pixels per list row
+  const LIST_TOP = 32;    // y below header
+  const LIST_BOT = H - 16;
+  const ROWS_VIS = Math.floor((LIST_BOT - LIST_TOP) / ROW_H);
+
+  let results    = [];    // {label, url, status: 'pending'|'ok'|'fail'}
+  let doneCount  = 0;
+  let totalCount = 0;
+  let scrollOff  = 0;
+  let loggedDone = false;
+
+  function enter() {
+    flushInput();
+    results   = [];
+    doneCount = 0;
+    totalCount = 0;
+    scrollOff  = 0;
+    loggedDone = false;
+
+    SPRITE_FILENAMES.forEach(filename => {
+      ['f', 'b'].forEach(side => {
+        const url   = SPRITE_BASE + filename;
+        const label = filename.replace(/\.png$/i, '') + ' (' + side + ')';
+        const entry = { label, url, status: 'pending' };
+        results.push(entry);
+        totalCount++;
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload  = () => { entry.status = 'ok';   doneCount++; };
+        img.onerror = () => { entry.status = 'fail'; doneCount++; };
+        img.src = url;
+      });
+    });
+
+    console.log('[Googlimon Sprite Debug] Probing ' + totalCount + ' image slots (' + SPRITE_FILENAMES.length + ' files \xd7 2 sides)');
+    console.log('[Googlimon Sprite Debug] SPRITE_BASE = ' + SPRITE_BASE);
+  }
+
+  function update() {
+    if (!loggedDone && doneCount >= totalCount && totalCount > 0) {
+      loggedDone = true;
+      const ok     = results.filter(r => r.status === 'ok').length;
+      const failed = results.filter(r => r.status === 'fail');
+      console.log('[Googlimon Sprite Debug] DONE: ' + ok + ' of ' + totalCount + ' loaded, ' + failed.length + ' failed');
+      const failUrls = [...new Set(failed.map(r => r.url))];
+      if (failUrls.length) {
+        console.log('[Googlimon Sprite Debug] Unique failed URLs (' + failUrls.length + '):');
+        failUrls.forEach(u => console.log('  FAIL: ' + u));
+      } else {
+        console.log('[Googlimon Sprite Debug] All URLs responded with success!');
+      }
+    }
+
+    if (navUp())   scrollOff = Math.max(0, scrollOff - 1);
+    if (navDown()) scrollOff = Math.min(Math.max(0, results.length - ROWS_VIS), scrollOff + 1);
+
+    if (cancelPressed() || pressed('Backquote')) setState('title');
+  }
+
+  function render() {
+    fr(0, 0, W, H, '#020810');
+
+    // ── Header ────────────────────────────────────────────────
+    drawPanel(0, 0, W, LIST_TOP);
+    drawTextC('SPRITE DIAGNOSTIC', 4, { color: PAL.GOLD, size: 9 });
+    const ok = results.filter(r => r.status === 'ok').length;
+    const statusStr = doneCount < totalCount
+      ? 'Probing... ' + doneCount + ' / ' + totalCount
+      : ok + ' of ' + totalCount + ' sprites loaded';
+    const statusCol = doneCount < totalCount ? PAL.TEXT_DIM
+      : ok === totalCount ? PAL.HP_HI : PAL.TEXT_RED;
+    drawTextC(statusStr, 17, { color: statusCol, size: 7 });
+
+    // ── List ──────────────────────────────────────────────────
+    const visible = results.slice(scrollOff, scrollOff + ROWS_VIS);
+    visible.forEach((entry, i) => {
+      const ry = LIST_TOP + i * ROW_H;
+      if (entry.status === 'ok') {
+        drawText('✓', 4, ry, { color: PAL.HP_HI, size: 8, shadow: false });
+        drawText(entry.label, 14, ry, { color: '#3a6a3a', size: 7, shadow: false });
+      } else if (entry.status === 'fail') {
+        drawText('✗', 4, ry, { color: PAL.TEXT_RED, size: 8, shadow: false });
+        drawText(entry.label, 14, ry, { color: PAL.TEXT_RED, size: 7, shadow: false });
+        const shortUrl = entry.url.replace(SPRITE_BASE, '…/');
+        drawText(shortUrl, 22, ry + 6, { color: '#664444', size: 6, shadow: false });
+      } else {
+        drawText('?', 4, ry, { color: PAL.TEXT_DIM, size: 8, shadow: false });
+        drawText(entry.label, 14, ry, { color: PAL.TEXT_DIM, size: 7, shadow: false });
+      }
+    });
+
+    // ── Scroll indicator ──────────────────────────────────────
+    if (results.length > ROWS_VIS) {
+      const trackH  = LIST_BOT - LIST_TOP;
+      const thumbH  = Math.max(12, Math.round(trackH * ROWS_VIS / results.length));
+      const thumbY  = LIST_TOP + Math.round((trackH - thumbH) * scrollOff / Math.max(1, results.length - ROWS_VIS));
+      fr(W - 4, LIST_TOP, 3, trackH, '#0a1828');
+      fr(W - 4, thumbY,   3, thumbH, PAL.ACCENT2);
+    }
+
+    // ── Footer ────────────────────────────────────────────────
+    fr(0, LIST_BOT, W, H - LIST_BOT, '#030c18');
+    drawTextC('↑↓ scroll  \xb7  E or \x60 to close  \xb7  failed URLs in console (F12)', LIST_BOT + 3, { color: PAL.TEXT_DIM, size: 6 });
+  }
+
+  return { enter, update, render };
+})();
+
+STATES.sprite_debug = spriteDebugState;
 
 // ============================================================
 // STATE: ENGINE DEMO  (tile renderer showcase, Part 1 only)
