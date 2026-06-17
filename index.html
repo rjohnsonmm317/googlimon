@@ -203,11 +203,12 @@ const T = {
   STAIR:   12,  // walkable — staircase
   FLOWER:  13,  // walkable — decorative flowers (no encounter)
   SAND:    14,  // walkable — sandy path
+  PORTAL:  15,  // walkable — warp pad (gym portal maze)
 };
 
 const WALKABLE = new Set([
   T.PATH, T.GRASS, T.TALL, T.DOOR, T.FLOOR,
-  T.GYM, T.STAIR, T.FLOWER, T.SAND,
+  T.GYM, T.STAIR, T.FLOWER, T.SAND, T.PORTAL,
 ]);
 const ENCOUNTER_TILES = new Set([T.TALL]);
 
@@ -228,6 +229,7 @@ const TILE_DEF = {
   [T.STAIR]:   { bg: '#282818', det: '#383828' },
   [T.FLOWER]:  { bg: '#1a3a1a', det: '#1a3a1a' },
   [T.SAND]:    { bg: '#2a2210', det: '#322a18' },
+  [T.PORTAL]:  { bg: '#001428', det: '#0066cc' },
 };
 
 // Draw one tile at canvas-pixel position (px, py)
@@ -455,6 +457,22 @@ function drawTile(id, px, py, tick) {
       ctx.fillRect(px + 6,  py + 10, 3, 1);
       ctx.fillRect(px + 11, py + 3,  2, 1);
       break;
+
+    case T.PORTAL: {
+      // Pulsing cyan warp pad
+      const pPulse = tick ? Math.sin(tick * 0.08 + (px + py) * 0.2) * 0.5 + 0.5 : 0.5;
+      ctx.fillStyle = `rgba(0,80,${Math.floor(160 + pPulse * 95)},0.9)`;
+      ctx.fillRect(px + 2, py + 2, TS - 4, TS - 4);
+      ctx.fillStyle = '#00ccff55';
+      ctx.fillRect(px + 4, py + 4, TS - 8, TS - 8);
+      // Rotating chevron arrows
+      const arrowBright = Math.floor(pPulse * 200 + 55);
+      ctx.fillStyle = `rgb(0,${arrowBright},255)`;
+      ctx.fillRect(px + 6, py + 5, 4, 2);
+      ctx.fillRect(px + 7, py + 7, 2, 2);
+      ctx.fillRect(px + 6, py + 9, 4, 2);
+      break;
+    }
   }
 }
 
@@ -607,6 +625,54 @@ const Sound = (() => {
       bass: ['C3', 'C3', null, 'G3', 'C3', 'C3', null, 'G3', 'A2', 'A2', null, 'E3', 'A2', 'A2', null, 'E3'],
       lead: ['C5', null, 'E5', 'G5', null, 'E5', 'C5', null, 'A4', null, 'C5', 'E5', null, 'C5', 'A4', null],
       leadType: 'square', bassType: 'triangle', leadGain: 0.085, bassGain: 0.075,
+    }),
+    over_browser_bay: buildTrack({
+      stepDur: 0.14, steps: 16,
+      bass: ['A2','A2',null,'E3','A2',null,'E3',null,'G2','G2',null,'D3','G2',null,'D3',null],
+      lead: ['E4',null,'G4','A4',null,'G4','E4',null,'C4',null,'E4','G4','A4',null,'E4',null],
+      drum: [null,null,null,null,'x',null,null,null,null,null,null,null,'x',null,null,null],
+      leadType: 'sine', bassType: 'triangle', leadGain: 0.09, bassGain: 0.075, drumGain: 0.06,
+    }),
+    over_streamport: buildTrack({
+      stepDur: 0.115, steps: 16,
+      bass: ['F2',null,'C3','F2',null,'F2','C3',null,'D2',null,'A2','D2',null,'D2','A2',null],
+      lead: ['F4','A4','C5','A4','F4',null,'C5','A4','D4','F4','A4','F4','D4',null,'A4',null],
+      drum: ['x',null,null,null,'x',null,null,'x','x',null,null,null,'x',null,null,null],
+      leadType: 'square', bassType: 'triangle', leadGain: 0.09, bassGain: 0.08, drumGain: 0.07,
+    }),
+    over_cloud_city: buildTrack({
+      stepDur: 0.20, steps: 16,
+      bass: ['C2',null,null,'G2',null,null,'A1',null,null,'E2',null,null,'F2',null,null,null],
+      lead: ['G4',null,'C5',null,'E5',null,'C5',null,'A4',null,'E5',null,'G5',null,'E5',null],
+      leadType: 'sine', bassType: 'sine', leadGain: 0.08, bassGain: 0.07,
+    }),
+    over_crisis: buildTrack({
+      stepDur: 0.26, steps: 16,
+      bass: ['D2',null,null,'D2',null,'C#2',null,null,'D2',null,null,'E2',null,null,null,'D2'],
+      lead: [null,'F3',null,null,'E3',null,null,'D#3',null,null,'D3',null,'C#3',null,null,null],
+      drum: ['x',null,null,null,'x',null,null,null,'x',null,null,null,'x',null,'x',null],
+      leadType: 'sawtooth', bassType: 'sine', leadGain: 0.07, bassGain: 0.08, drumGain: 0.06,
+    }),
+    gym2: buildTrack({
+      stepDur: 0.095, steps: 16,
+      bass: ['A2','A2','E2','E2','A2','A2','F2','F2','G2','G2','D2','D2','E2','E2','B1','B1'],
+      lead: ['A4','C5','E5','C5','A4','E4','A4','C5','G4','B4','D5','B4','G4','E4','F4','E4'],
+      drum: [null,null,null,'x',null,null,'x',null,null,null,null,'x',null,'x',null,null],
+      leadType: 'sawtooth', bassType: 'triangle', leadGain: 0.095, bassGain: 0.085, drumGain: 0.09,
+    }),
+    gym3: buildTrack({
+      stepDur: 0.085, steps: 16,
+      bass: ['F2','F2','C2','C2','F2','F2','G2','G2','D2','D2','A2','A2','C2','C2','G1','G1'],
+      lead: ['F4','A4','C5','A4','F4','C4','F4','A4','D4','F4','A4','F4','C5','A4','G4','F4'],
+      drum: ['x',null,null,'x','x',null,null,'x','x',null,null,'x','x',null,'x','x'],
+      leadType: 'sawtooth', bassType: 'triangle', leadGain: 0.10, bassGain: 0.09, drumGain: 0.10,
+    }),
+    gym4: buildTrack({
+      stepDur: 0.08, steps: 16,
+      bass: ['D2','D2','D2','A1','D2','D2','E2','E2','F2','F2','C2','C2','D2','D2','A1','A1'],
+      lead: ['D5','F5','A5','F5','D5','F5','E5','D5','F5','A5','C6','A5','D5','F5','A5','D5'],
+      drum: ['x',null,'x',null,'x',null,'x',null,'x',null,'x',null,'x',null,'x',null],
+      leadType: 'sawtooth', bassType: 'triangle', leadGain: 0.10, bassGain: 0.09, drumGain: 0.11,
     }),
     battle_wild: buildTrack({
       stepDur: 0.11, steps: 16,
@@ -908,13 +974,26 @@ const OVERWORLD_TRACKS = {
   crawler_woods: 'over_crawler',
   searchburg: 'over_searchburg', center_interior: 'over_searchburg',
   mart_interior: 'over_searchburg', gym1_interior: 'over_searchburg',
+  route2: 'over_route1',
+  browser_bay: 'over_browser_bay', browser_bay_center: 'over_browser_bay',
+  browser_bay_mart: 'over_browser_bay', gym2_interior: 'over_browser_bay',
+  route3: 'over_streamport',
+  streamport: 'over_streamport', streamport_center: 'over_streamport',
+  streamport_mart: 'over_streamport', gym3_interior: 'over_streamport',
+  route4: 'over_cloud_city',
+  cloud_city: 'over_cloud_city', cloud_city_center: 'over_cloud_city',
+  gym4_interior: 'over_cloud_city',
 };
 
 function applyStateMusic(name, arg) {
   if (name === 'title') { Sound.playTrack('title'); return; }
+  if (name === 'cloud_crisis') { Sound.playTrack('over_crisis'); return; }
   if (name === 'battle') {
     const trainerId = arg && arg.trainerId;
     if (trainerId === 'scout_searcher') Sound.playTrack('gym');
+    else if (trainerId === 'tabitha') Sound.playTrack('gym2');
+    else if (trainerId === 'livia' || trainerId === 'liv_streamport') Sound.playTrack('gym3');
+    else if (trainerId === 'nimbus') Sound.playTrack('gym4');
     else if (arg && arg.isTrainer) Sound.playTrack('battle_trainer');
     else Sound.playTrack('battle_wild');
     return;
@@ -1559,6 +1638,7 @@ function mkRow(str) {
       case 'T': return T.TREE;
       case '~': return T.WATER;
       case 'f': return T.FLOWER;
+      case 'P': return T.PORTAL;
       default:  return T.PATH;
     }
   });
@@ -2113,6 +2193,11 @@ const SAVE = {
     met_professor: false,
     starter_chosen: false,
     gym1_beaten: false,
+    gym2_beaten: false,
+    gym3_beaten: false,
+    gym4_beaten: false,
+    cloud_crisis: false,
+    rival_livia_1: false,
     malware_first_encounter: false,
     rival_battle_1: false,
   },
@@ -2756,6 +2841,219 @@ const SPECIES = {
       {lv:5,move:{name:'Encrypt',    type:'Security', power:50,pp:20}},
     ],
   },
+  // Gym 1 supplemental — Search type
+  Seekrow: {
+    type1:'Search', type2:'Virus',
+    baseHp:38, baseAtk:13, baseDef:7, baseSpd:16,
+    catchRate:160, xpYield:52,
+    learnset:[
+      {lv:1,move:{name:'Peck',       type:'Hardware',power:25,pp:40}},
+      {lv:1,move:{name:'Query',      type:'Search',  power:30,pp:35}},
+      {lv:4,move:{name:'Pluck Data', type:'Search',  power:42,pp:25}},
+      {lv:6,move:{name:'Crow Call',  type:'Social',  power:0, pp:20,effect:'atk+1'}},
+    ],
+  },
+  Findrake: {
+    type1:'Search', type2:'AI',
+    baseHp:48, baseAtk:16, baseDef:12, baseSpd:14,
+    catchRate:90, xpYield:74,
+    learnset:[
+      {lv:1,move:{name:'Index Slash',type:'Search',  power:40,pp:25}},
+      {lv:1,move:{name:'Scan',       type:'Data',    power:30,pp:35}},
+      {lv:5,move:{name:'Rank Blast', type:'Search',  power:52,pp:20}},
+      {lv:8,move:{name:'Dragonfind', type:'AI',      power:65,pp:15}},
+    ],
+  },
+  // Route 2 / Gym 2 — Browser type
+  Tabbit: {
+    type1:'Browser', type2:null,
+    baseHp:40, baseAtk:10, baseDef:9, baseSpd:13,
+    catchRate:190, xpYield:42,
+    learnset:[
+      {lv:1,move:{name:'Tab Tap',    type:'Browser', power:28,pp:40}},
+      {lv:1,move:{name:'Hop',        type:'Hardware',power:20,pp:40}},
+      {lv:3,move:{name:'New Tab',    type:'Browser', power:38,pp:30}},
+      {lv:5,move:{name:'Refresh',    type:'Browser', power:0, pp:25,effect:'def+1'}},
+    ],
+  },
+  Hoplink: {
+    type1:'Browser', type2:'Data',
+    baseHp:44, baseAtk:12, baseDef:10, baseSpd:15,
+    catchRate:160, xpYield:56,
+    learnset:[
+      {lv:1,move:{name:'Hop Link',   type:'Browser', power:35,pp:30}},
+      {lv:1,move:{name:'URL Dash',   type:'Data',    power:30,pp:35}},
+      {lv:4,move:{name:'Deep Link',  type:'Browser', power:46,pp:25}},
+      {lv:7,move:{name:'Cache Load', type:'Data',    power:0, pp:15,effect:'spd+1'}},
+    ],
+  },
+  Linklet: {
+    type1:'Browser', type2:'Social',
+    baseHp:42, baseAtk:11, baseDef:11, baseSpd:14,
+    catchRate:170, xpYield:48,
+    learnset:[
+      {lv:1,move:{name:'Link Snap',  type:'Browser', power:30,pp:35}},
+      {lv:1,move:{name:'Hyperclick', type:'Social',  power:25,pp:40}},
+      {lv:4,move:{name:'Anchor Tag', type:'Browser', power:42,pp:25}},
+      {lv:6,move:{name:'Forward',    type:'Browser', power:0, pp:20,effect:'spd+1'}},
+    ],
+  },
+  Chromunk: {
+    type1:'Browser', type2:'Electric',
+    baseHp:44, baseAtk:14, baseDef:10, baseSpd:14,
+    catchRate:140, xpYield:62,
+    learnset:[
+      {lv:1,move:{name:'Chrome Dash',type:'Browser', power:35,pp:30}},
+      {lv:1,move:{name:'Spark',      type:'Electric',power:25,pp:40}},
+      {lv:4,move:{name:'Extension',  type:'Browser', power:46,pp:25}},
+      {lv:7,move:{name:'Volt Tab',   type:'Electric',power:55,pp:20}},
+    ],
+  },
+  Cacheunk: {
+    type1:'Browser', type2:'Data',
+    baseHp:48, baseAtk:13, baseDef:14, baseSpd:10,
+    catchRate:110, xpYield:70,
+    learnset:[
+      {lv:1,move:{name:'Cache Hit',  type:'Data',    power:35,pp:30}},
+      {lv:1,move:{name:'Store',      type:'Browser', power:0, pp:25,effect:'def+1'}},
+      {lv:5,move:{name:'Overflow',   type:'Data',    power:50,pp:20}},
+      {lv:8,move:{name:'Memory Dump',type:'Data',    power:65,pp:15}},
+    ],
+  },
+  Megachrome: {
+    type1:'Browser', type2:'Electric',
+    baseHp:56, baseAtk:18, baseDef:13, baseSpd:16,
+    catchRate:75, xpYield:98,
+    learnset:[
+      {lv:1,move:{name:'Mega Surf',  type:'Browser', power:55,pp:20}},
+      {lv:1,move:{name:'Volt Crash', type:'Electric',power:50,pp:20}},
+      {lv:5,move:{name:'Tab Storm',  type:'Browser', power:65,pp:15}},
+      {lv:9,move:{name:'Overclock',  type:'Electric',power:80,pp:10}},
+    ],
+  },
+  // Route 3 / Gym 3 — Media type
+  Streamit: {
+    type1:'Media', type2:'Data',
+    baseHp:42, baseAtk:12, baseDef:8, baseSpd:15,
+    catchRate:180, xpYield:50,
+    learnset:[
+      {lv:1,move:{name:'Buffer',     type:'Media',   power:30,pp:35}},
+      {lv:1,move:{name:'Click Bait', type:'Social',  power:20,pp:40}},
+      {lv:4,move:{name:'Stream Wave',type:'Media',   power:46,pp:25}},
+      {lv:7,move:{name:'Autoplay',   type:'Media',   power:0, pp:20,effect:'atk+1'}},
+    ],
+  },
+  Clipster: {
+    type1:'Media', type2:'Social',
+    baseHp:40, baseAtk:13, baseDef:9, baseSpd:17,
+    catchRate:170, xpYield:55,
+    learnset:[
+      {lv:1,move:{name:'Short Clip', type:'Media',   power:32,pp:35}},
+      {lv:1,move:{name:'Snip',       type:'Data',    power:25,pp:40}},
+      {lv:4,move:{name:'Viral Cut',  type:'Social',  power:46,pp:25}},
+      {lv:7,move:{name:'Share Bomb', type:'Social',  power:0, pp:20,effect:'atk+1'}},
+    ],
+  },
+  Casthound: {
+    type1:'Media', type2:'Search',
+    baseHp:48, baseAtk:15, baseDef:11, baseSpd:13,
+    catchRate:130, xpYield:70,
+    learnset:[
+      {lv:1,move:{name:'Broadcast',  type:'Media',   power:38,pp:30}},
+      {lv:1,move:{name:'Frequency',  type:'Data',    power:28,pp:35}},
+      {lv:5,move:{name:'Live Feed',  type:'Media',   power:52,pp:20}},
+      {lv:8,move:{name:'Signal Jam', type:'Search',  power:62,pp:15}},
+    ],
+  },
+  Voxwolf: {
+    type1:'Media', type2:'Search',
+    baseHp:54, baseAtk:20, baseDef:13, baseSpd:17,
+    catchRate:80, xpYield:102,
+    learnset:[
+      {lv:1,move:{name:'Vox Howl',   type:'Media',   power:55,pp:20}},
+      {lv:1,move:{name:'Sonar Pulse',type:'Search',  power:45,pp:25}},
+      {lv:5,move:{name:'Air Time',   type:'Media',   power:65,pp:15}},
+      {lv:9,move:{name:'Prime Time', type:'Media',   power:85,pp:10}},
+    ],
+  },
+  Influenix: {
+    type1:'Social', type2:'Media',
+    baseHp:46, baseAtk:16, baseDef:10, baseSpd:18,
+    catchRate:110, xpYield:74,
+    learnset:[
+      {lv:1,move:{name:'Trendsetter',type:'Social',  power:40,pp:28}},
+      {lv:1,move:{name:'Follow',     type:'Social',  power:0, pp:25,effect:'atk+1'}},
+      {lv:5,move:{name:'Influencer', type:'Media',   power:55,pp:20}},
+      {lv:8,move:{name:'Viral Storm',type:'Virus',   power:70,pp:15}},
+    ],
+  },
+  Viralord: {
+    type1:'Virus', type2:'Media',
+    baseHp:52, baseAtk:22, baseDef:9, baseSpd:20,
+    catchRate:70, xpYield:112,
+    learnset:[
+      {lv:1,move:{name:'Infect',     type:'Virus',   power:0, pp:20,effect:'corrupt'}},
+      {lv:1,move:{name:'Viral Surge',type:'Virus',   power:55,pp:20}},
+      {lv:5,move:{name:'Mass Share', type:'Social',  power:62,pp:18}},
+      {lv:9,move:{name:'Pandemic',   type:'Virus',   power:90,pp:10}},
+    ],
+  },
+  // Route 4 / Gym 4 — Cloud type
+  Nimbusheep: {
+    type1:'Cloud', type2:null,
+    baseHp:50, baseAtk:12, baseDef:16, baseSpd:11,
+    catchRate:150, xpYield:64,
+    learnset:[
+      {lv:1,move:{name:'Mist Byte',  type:'Cloud',   power:30,pp:35}},
+      {lv:1,move:{name:'Wool Guard', type:'Hardware',power:0, pp:25,effect:'def+1'}},
+      {lv:4,move:{name:'Cumulus',    type:'Cloud',   power:46,pp:25}},
+      {lv:7,move:{name:'Rain Cloud', type:'Cloud',   power:0, pp:20,effect:'def+2'}},
+    ],
+  },
+  Cloudram: {
+    type1:'Cloud', type2:'Electric',
+    baseHp:58, baseAtk:17, baseDef:18, baseSpd:14,
+    catchRate:90, xpYield:92,
+    learnset:[
+      {lv:1,move:{name:'Thunder Head',type:'Electric',power:50,pp:22}},
+      {lv:1,move:{name:'Nimbus Wave', type:'Cloud',   power:45,pp:25}},
+      {lv:5,move:{name:'Static Cloud',type:'Electric',power:62,pp:18}},
+      {lv:9,move:{name:'Storm Front', type:'Cloud',   power:76,pp:12}},
+    ],
+  },
+  Droplet: {
+    type1:'Cloud', type2:'Data',
+    baseHp:46, baseAtk:13, baseDef:12, baseSpd:16,
+    catchRate:170, xpYield:58,
+    learnset:[
+      {lv:1,move:{name:'Drop Byte',  type:'Cloud',   power:30,pp:35}},
+      {lv:1,move:{name:'Data Drip',  type:'Data',    power:25,pp:40}},
+      {lv:4,move:{name:'Downpour',   type:'Cloud',   power:48,pp:22}},
+      {lv:7,move:{name:'Upload',     type:'Data',    power:0, pp:20,effect:'atk+1'}},
+    ],
+  },
+  Stormlet: {
+    type1:'Cloud', type2:'Electric',
+    baseHp:44, baseAtk:15, baseDef:10, baseSpd:18,
+    catchRate:160, xpYield:62,
+    learnset:[
+      {lv:1,move:{name:'Zap Drop',   type:'Electric',power:35,pp:30}},
+      {lv:1,move:{name:'Gust',       type:'Cloud',   power:28,pp:40}},
+      {lv:4,move:{name:'Bolt Squall',type:'Electric',power:52,pp:22}},
+      {lv:7,move:{name:'Storm Cell', type:'Cloud',   power:60,pp:18}},
+    ],
+  },
+  Datacloud: {
+    type1:'Cloud', type2:'AI',
+    baseHp:60, baseAtk:20, baseDef:20, baseSpd:15,
+    catchRate:60, xpYield:128,
+    learnset:[
+      {lv:1,move:{name:'Data Storm', type:'Cloud',   power:60,pp:18}},
+      {lv:1,move:{name:'Neural Rain',type:'AI',      power:50,pp:20}},
+      {lv:5,move:{name:'Sky Server', type:'Data',    power:72,pp:15}},
+      {lv:9,move:{name:'Cloud Burst',type:'Cloud',   power:95,pp:10}},
+    ],
+  },
 };
 
 // ── Googlidex helpers ─────────────────────────────────────────
@@ -2867,12 +3165,45 @@ const battleState = (function() {
         SAVE.items['TM: Search Pulse']++;
         SAVE.flags.gym1_beaten = true;
       }
+      if (trainerId === 'tabitha') {
+        if (!SAVE.badges.includes('Link Badge')) SAVE.badges.push('Link Badge');
+        if (!SAVE.items['TM: Tab Storm']) SAVE.items['TM: Tab Storm'] = 0;
+        SAVE.items['TM: Tab Storm']++;
+        SAVE.flags.gym2_beaten = true;
+      }
+      if (trainerId === 'livia') {
+        SAVE.flags.rival_livia_1 = true;
+      }
+      if (trainerId === 'liv_streamport') {
+        if (!SAVE.badges.includes('Cache Badge')) SAVE.badges.push('Cache Badge');
+        if (!SAVE.items['TM: Broadcast']) SAVE.items['TM: Broadcast'] = 0;
+        SAVE.items['TM: Broadcast']++;
+        SAVE.flags.gym3_beaten = true;
+      }
+      if (trainerId === 'nimbus') {
+        if (!SAVE.badges.includes('Query Badge')) SAVE.badges.push('Query Badge');
+        if (!SAVE.items['TM: Cloud Burst']) SAVE.items['TM: Cloud Burst'] = 0;
+        SAVE.items['TM: Cloud Burst']++;
+        SAVE.flags.gym4_beaten = true;
+        // Trigger cloud crisis cutscene after Nimbus is defeated
+        if (!SAVE.flags.cloud_crisis) {
+          setTimeout(() => setState('cloud_crisis'), 400);
+        }
+      }
       if (trainerId === 'avery') {
         SAVE.flags.rival_battle_1 = true;
       }
     }
     const endMsgs = trainerId === 'scout_searcher'
       ? [`You defeated Scout Searcher!`, `The Index Badge is yours!`, `Take TM: Search Pulse!`]
+      : trainerId === 'tabitha'
+      ? [`You defeated Tabitha!`, `The Link Badge is yours!`, `Take TM: Tab Storm!`]
+      : trainerId === 'livia'
+      ? [`You defeated Livia!`, `"I won't hold back next time."`, `Got ${trainerReward} credits!`]
+      : trainerId === 'liv_streamport'
+      ? [`You defeated Liv!`, `The Cache Badge is yours!`, `Take TM: Broadcast!`]
+      : trainerId === 'nimbus'
+      ? [`You defeated Nimbus!`, `The Query Badge is yours!`, `Take TM: Cloud Burst!`]
       : trainerId === 'avery'
       ? [`You defeated Avery!`, `"I will not lose again."`, `Got ${trainerReward} credits!`]
       : [`You defeated ${trainerName}!`, `Got ${trainerReward} credits!`];
@@ -3496,7 +3827,7 @@ MAPS.searchburg = {
   name: 'Searchburg',
   w: 20, h: 15,
   tiles: [
-    mkRow('TTTTTTTTTTTTTTTTTTTT'),  // row 0  (20 T's)
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 0  gap at cols 9-10 (exit to route2)
     mkRow('T..................T'),   // row 1  (T+18 dots+T = 20)
     mkRow('T.BBBB.......BBBB..T'),   // row 2  center cols2-5, mart cols13-16
     mkRow('T.BFFB.......BFFB..T'),   // row 3
@@ -3513,14 +3844,16 @@ MAPS.searchburg = {
     mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 14  gap at cols 9-10 (9+2+9=20)
   ],
   exits: [
-    { x: 9,  y: 14, toMap: 'route1', toX: 9,  toY: 1 },
-    { x: 10, y: 14, toMap: 'route1', toX: 10, toY: 1 },
-    { x: 3,  y: 4,  toMap: 'center_interior', toX: 4, toY: 5 },
-    { x: 4,  y: 4,  toMap: 'center_interior', toX: 5, toY: 5 },
-    { x: 14, y: 4,  toMap: 'mart_interior',   toX: 4, toY: 5 },
-    { x: 15, y: 4,  toMap: 'mart_interior',   toX: 5, toY: 5 },
-    { x: 7,  y: 9,  toMap: 'gym1_interior',   toX: 6, toY: 10 },
-    { x: 8,  y: 9,  toMap: 'gym1_interior',   toX: 7, toY: 10 },
+    { x: 9,  y: 0,  toMap: 'route2',          toX: 9,  toY: 13 },
+    { x: 10, y: 0,  toMap: 'route2',          toX: 10, toY: 13 },
+    { x: 9,  y: 14, toMap: 'route1',          toX: 9,  toY: 1  },
+    { x: 10, y: 14, toMap: 'route1',          toX: 10, toY: 1  },
+    { x: 3,  y: 4,  toMap: 'center_interior', toX: 4,  toY: 5  },
+    { x: 4,  y: 4,  toMap: 'center_interior', toX: 5,  toY: 5  },
+    { x: 14, y: 4,  toMap: 'mart_interior',   toX: 4,  toY: 5  },
+    { x: 15, y: 4,  toMap: 'mart_interior',   toX: 5,  toY: 5  },
+    { x: 7,  y: 9,  toMap: 'gym1_interior',   toX: 6,  toY: 10 },
+    { x: 8,  y: 9,  toMap: 'gym1_interior',   toX: 7,  toY: 10 },
   ],
   playerStart: { x: 9, y: 13 },
   npcs: [
@@ -3619,6 +3952,760 @@ MAPS.gym1_interior = {
   ],
 };
 
+// ============================================================
+// PART 5b — ROUTE 2, BROWSER BAY, GYM 2, ROUTE 3, STREAMPORT,
+//           GYM 3, ROUTE 4, CLOUD CITY, GYM 4
+// ============================================================
+
+// ── Route 2 — Searchburg → Browser Bay (20×15) ───────────────
+MAPS.route2 = {
+  name: 'Route 2',
+  w: 20, h: 15,
+  tiles: [
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 0  border (exit to browser_bay)
+    mkRow('T..................T'),   // row 1
+    mkRow('T....gGGGGGGGGg....T'),  // row 2
+    mkRow('T....gGGGGGGGGg....T'),  // row 3
+    mkRow('T.f....gGGGGg......T'),  // row 4  sign
+    mkRow('T..................T'),   // row 5  breather
+    mkRow('T..gGGGGGGG........T'),  // row 6
+    mkRow('T..gGGGGGGG........T'),  // row 7
+    mkRow('T..gGGGGGGG........T'),  // row 8
+    mkRow('T.........gGGGGGg..T'),  // row 9
+    mkRow('T.........gGGGGGg..T'),  // row 10
+    mkRow('T.........gGGGGGg..T'),  // row 11
+    mkRow('T..................T'),   // row 12
+    mkRow('T..................T'),   // row 13 (player arrives from searchburg)
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 14 border (exit to searchburg)
+  ],
+  exits: [
+    { x:9,  y:0,  toMap:'browser_bay', toX:9,  toY:13 },
+    { x:10, y:0,  toMap:'browser_bay', toX:10, toY:13 },
+    { x:9,  y:14, toMap:'searchburg',  toX:9,  toY:1  },
+    { x:10, y:14, toMap:'searchburg',  toX:10, toY:1  },
+  ],
+  playerStart: { x:9, y:13 },
+  encounterPool: [
+    { name:'Tabbit',   minLv:10, maxLv:13, weight:30 },
+    { name:'Hoplink',  minLv:11, maxLv:13, weight:25 },
+    { name:'Linklet',  minLv:12, maxLv:14, weight:20 },
+    { name:'Chromunk', minLv:11, maxLv:13, weight:25 },
+  ],
+  npcs: [
+    { id:'npc_r2_sign', x:2, y:4, dir:2, color:'#886600',
+      script:["Route 2 — Browser Bay is to the north!","Browser-type Googlimon thrive in the tall grass here."] },
+    { id:'trainer_r2_kira', x:12, y:7, dir:2, color:'#44aaff',
+      trainerName:'Coder Kira', isTrainer:true, defeated:false,
+      team:[ generateWild('Tabbit',10), generateWild('Hoplink',11) ],
+      reward:350,
+      script:["New trainers always pass through Route 2 first!"],
+      defeatScript:["You know your Browser-types well!"] },
+    { id:'trainer_r2_zane', x:15, y:10, dir:2, color:'#ff8844',
+      trainerName:'Net Surfer Zane', isTrainer:true, defeated:false,
+      team:[ generateWild('Chromunk',12), generateWild('Linklet',11) ],
+      reward:420,
+      script:["I surf the web and the routes!","Prepare for a Browser blitz!"],
+      defeatScript:["Buffering... defeat acquired..."] },
+  ],
+};
+
+// ── Browser Bay Town (20×15) ──────────────────────────────────
+// Layout: center+lighthouse rows 1-4, gym rows 6-8, mart rows 10-12, open row 13
+MAPS.browser_bay = {
+  name: 'Browser Bay',
+  w: 20, h: 15,
+  tiles: [
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 0  north border (exit to route3)
+    mkRow('T.BBBB.........BBBBT'),  // row 1  center cols2-5, lighthouse cols15-18
+    mkRow('T.BFFB.........B..BT'),  // row 2
+    mkRow('T.BDDB.........BBBBT'),  // row 3  center doors 3-4
+    mkRow('T..................T'),   // row 4  open path
+    mkRow('T..................T'),   // row 5
+    mkRow('T.....WWWWW........T'),  // row 6  gym top (cols 5-9)
+    mkRow('T.....WFFFW........T'),  // row 7
+    mkRow('T.....WDDWW........T'),  // row 8  gym doors 7-8
+    mkRow('T..................T'),   // row 9  open path
+    mkRow('T.BBBB.......f.....T'),  // row 10 mart cols2-5, sign col13
+    mkRow('T.BFFB.............T'),  // row 11
+    mkRow('T.BDDB.............T'),  // row 12 mart doors 3-4
+    mkRow('T..................T'),   // row 13 open path (player arrives)
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 14 south border (exit to route2)
+  ],
+  exits: [
+    { x:9,  y:0,  toMap:'route3',             toX:9,  toY:13 },
+    { x:10, y:0,  toMap:'route3',             toX:10, toY:13 },
+    { x:9,  y:14, toMap:'route2',             toX:9,  toY:1  },
+    { x:10, y:14, toMap:'route2',             toX:10, toY:1  },
+    { x:3,  y:3,  toMap:'browser_bay_center', toX:4,  toY:5  },
+    { x:4,  y:3,  toMap:'browser_bay_center', toX:5,  toY:5  },
+    { x:3,  y:12, toMap:'browser_bay_mart',   toX:4,  toY:5  },
+    { x:4,  y:12, toMap:'browser_bay_mart',   toX:5,  toY:5  },
+    { x:7,  y:8,  toMap:'gym2_interior',      toX:6,  toY:10 },
+    { x:8,  y:8,  toMap:'gym2_interior',      toX:7,  toY:10 },
+  ],
+  playerStart: { x:9, y:13 },
+  npcs: [
+    { id:'npc_bb1', x:12, y:5, dir:2, color:'#88bbff',
+      script:["Welcome to Browser Bay — city of navigation!","Our Gym Leader Tabitha is a Browser-type master."] },
+    { id:'npc_bb2', x:17, y:10, dir:2, color:'#aaffcc',
+      script:["The Portal Lighthouse guides ships through open tabs.","Legend says it shows you the right path when you're lost."] },
+    { id:'npc_bb3', x:13, y:11, dir:2, color:'#ffcc44',
+      script:["Tip: In Tabitha's gym, the RIGHT portal always advances you!","The LEFT portals are dead ends — learn from the lighthouse!"] },
+  ],
+};
+
+// ── Browser Bay Googlimon Center (10×8) ──────────────────────
+MAPS.browser_bay_center = {
+  name: "Browser Bay Googlimon Center",
+  w: 10, h: 8,
+  tiles: [
+    mkRow('WWWWWWWWWW'),
+    mkRow('WFCCCCCCFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFDFFFW'),
+    mkRow('WWWWWWWWWW'),
+  ],
+  exits: [{ x:5, y:6, toMap:'browser_bay', toX:3, toY:4 }],
+  playerStart: { x:5, y:5 },
+  npcs: [
+    { id:'nurse_bb', x:5, y:1, dir:2, color:'#ffbbcc',
+      script:["Welcome to the Browser Bay Googlimon Center!","Your Googlimon have been healed!"] },
+  ],
+};
+
+// ── Browser Bay Mart (10×8) ───────────────────────────────────
+MAPS.browser_bay_mart = {
+  name: "Browser Bay Mart",
+  w: 10, h: 8,
+  tiles: [
+    mkRow('WWWWWWWWWW'),
+    mkRow('WFCCCCCCFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFDFFFW'),
+    mkRow('WWWWWWWWWW'),
+  ],
+  exits: [{ x:5, y:6, toMap:'browser_bay', toX:3, toY:13 }],
+  playerStart: { x:5, y:5 },
+  npcs: [
+    { id:'mart_clerk_bb', x:5, y:1, dir:2, color:'#ffffaa',
+      script:["Welcome to the Browser Bay Mart!","We stock stronger gear for your adventure."] },
+  ],
+};
+
+// ── Gym 2 Interior — Portal "Open Tabs" Maze (14×12) ─────────
+// Portal logic:  P at (3,9) → (11,9) [dead end trainer area]
+//                P at (10,9) → (10,5) [correct — middle section]
+//                P at (3,5) → (3,10) [wrong — back to entry]
+//                P at (10,5) → (7,2) [correct — near Tabitha]
+MAPS.gym2_interior = {
+  name: "Tabitha's Gym — Open Tabs Maze",
+  w: 14, h: 12,
+  tiles: [
+    mkRow('WWWWWWWWWWWWWW'),  // row 0
+    mkRow('WFFFFFFFFFFFFW'),  // row 1  Tabitha at col 7
+    mkRow('WFFFFFFFFFFFFW'),  // row 2
+    mkRow('WWWWWWWWWWWWWW'),  // row 3  solid barrier (portal only)
+    mkRow('WFFFFFFFFFFFFW'),  // row 4
+    mkRow('WFPFFFFFFFPFFW'),  // row 5  Portal A (col 2), Portal B (col 10)
+    mkRow('WFFFFFFFFFFFFW'),  // row 6
+    mkRow('WWWWWWWWWWWWWW'),  // row 7  solid barrier (portal only)
+    mkRow('WFFFFFFFFFFFFW'),  // row 8
+    mkRow('WFPFFFFFFFPFFW'),  // row 9  Portal C (col 2), Portal D (col 10)
+    mkRow('WFFFFFFFFFFFFW'),  // row 10
+    mkRow('WWWWWWDWWWWWWW'),  // row 11 entrance door at col 6
+  ],
+  exits: [
+    { x:2,  y:9,  toMap:'gym2_interior', toX:11, toY:10 },  // wrong  → dead end (entry zone)
+    { x:10, y:9,  toMap:'gym2_interior', toX:5,  toY:4  },  // correct → middle zone (floor, not on portal)
+    { x:2,  y:5,  toMap:'gym2_interior', toX:3,  toY:10 },  // wrong  → back to entry zone
+    { x:10, y:5,  toMap:'gym2_interior', toX:7,  toY:2  },  // correct → top zone near Tabitha
+    { x:6,  y:11, toMap:'browser_bay',   toX:7,  toY:10 },
+  ],
+  playerStart: { x:6, y:10 },
+  npcs: [
+    { id:'gym2_trainer_1', x:5, y:5, dir:2, color:'#44aaff',
+      trainerName:'Browser Ace Jay', isTrainer:true, defeated:false,
+      team:[ generateWild('Chromunk',14), generateWild('Cacheunk',13) ],
+      reward:450,
+      script:["You took the right portal — now face me!"],
+      defeatScript:["Your routing strategy was superior!"] },
+    { id:'gym2_trainer_2', x:8, y:9, dir:2, color:'#0088cc',
+      trainerName:'Tab Queen Mira', isTrainer:true, defeated:false,
+      team:[ generateWild('Tabbit',12), generateWild('Hoplink',13), generateWild('Linklet',12) ],
+      reward:390,
+      script:["I open 50 tabs minimum — and I never lose one!"],
+      defeatScript:["...I need to close some of those."] },
+    { id:'tabitha', x:7, y:1, dir:2, color:'#00ccff',
+      trainerName:'Tabitha', isTrainer:true, defeated:false,
+      team:[
+        generateWild('Cacheunk',  14),
+        generateWild('Chromunk',  16),
+        generateWild('Megachrome',18),
+      ],
+      reward:2200,
+      script:[
+        "Tabitha of the Portal Lighthouse — that's me!",
+        "You navigated the Open Tabs Maze. Impressive.",
+        "But can you keep up with MEGA SURF?",
+      ],
+      defeatScript:[
+        "Incredible... you read every portal perfectly.",
+        "Accept the Link Badge — you've earned it.",
+        "The path north to Streamport is open. Trust the signals!",
+      ] },
+    { id:'npc_gym2_sign', x:9, y:10, dir:2, color:'#888888',
+      script:["A lighthouse chart hangs here:","LEFT portals send you astray.","RIGHT portals guide you forward.","Trust the beacon — go RIGHT!"] },
+  ],
+};
+
+// ── Route 3 — Browser Bay → Streamport (20×15) ───────────────
+MAPS.route3 = {
+  name: 'Route 3',
+  w: 20, h: 15,
+  tiles: [
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 0  border (exit to streamport)
+    mkRow('T..................T'),   // row 1
+    mkRow('T..gGGGGGGGGGGGg..T'),  // row 2
+    mkRow('T..gGGGGGGGGGGGg..T'),  // row 3
+    mkRow('T..................T'),   // row 4  breather
+    mkRow('T.f................T'),  // row 5  sign
+    mkRow('T....gGGGGG........T'),  // row 6
+    mkRow('T....gGGGGG........T'),  // row 7
+    mkRow('T....gGGGGG........T'),  // row 8  trainer
+    mkRow('T.........gGGGGGg..T'),  // row 9
+    mkRow('T.........gGGGGGg..T'),  // row 10 trainer
+    mkRow('T.........gGGGGGg..T'),  // row 11
+    mkRow('T..................T'),   // row 12
+    mkRow('T..................T'),   // row 13 (player arrives from browser_bay)
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 14 border (exit to browser_bay)
+  ],
+  exits: [
+    { x:9,  y:0,  toMap:'streamport',  toX:9,  toY:13 },
+    { x:10, y:0,  toMap:'streamport',  toX:10, toY:13 },
+    { x:9,  y:14, toMap:'browser_bay', toX:9,  toY:1  },
+    { x:10, y:14, toMap:'browser_bay', toX:10, toY:1  },
+  ],
+  playerStart: { x:9, y:13 },
+  encounterPool: [
+    { name:'Streamit',  minLv:15, maxLv:18, weight:30 },
+    { name:'Clipster',  minLv:16, maxLv:19, weight:28 },
+    { name:'Casthound', minLv:16, maxLv:18, weight:22 },
+    { name:'Chirper',   minLv:14, maxLv:17, weight:20 },
+  ],
+  npcs: [
+    { id:'npc_r3_sign', x:2, y:5, dir:2, color:'#886600',
+      script:["Route 3 — The coastal road to Streamport.","Media-type Googlimon broadcast here constantly."] },
+    { id:'trainer_r3_petra', x:12, y:8, dir:2, color:'#ff88cc',
+      trainerName:'Influencer Petra', isTrainer:true, defeated:false,
+      team:[ generateWild('Clipster',16), generateWild('Streamit',17) ],
+      reward:510,
+      script:["Follow me! I'm going LIVE on Route 3!"],
+      defeatScript:["This clip is going in the highlights reel."] },
+    { id:'trainer_r3_marcus', x:15, y:10, dir:2, color:'#cc8833',
+      trainerName:'Podcaster Marcus', isTrainer:true, defeated:false,
+      team:[ generateWild('Casthound',17), generateWild('Clipster',16) ],
+      reward:510,
+      script:["Episode 347 — I challenge YOU!","Subscribe to my battle podcast!"],
+      defeatScript:["Pausing... for tactical reflection."] },
+  ],
+};
+
+// ── Streamport Town (20×15) ───────────────────────────────────
+MAPS.streamport = {
+  name: 'Streamport',
+  w: 20, h: 15,
+  tiles: [
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 0  border (exit to route4)
+    mkRow('T..................T'),   // row 1
+    mkRow('T.BBBB....~~~~~....T'),  // row 2  center (cols 2-5), water (cols 10-14)
+    mkRow('T.BFFB....~~~~~....T'),  // row 3  Quantum Ocean coastline
+    mkRow('T.BDDB.............T'),  // row 4  center doors
+    mkRow('T..................T'),   // row 5
+    mkRow('T.....WWWWW........T'),  // row 6  gym building
+    mkRow('T.....WFFFW........T'),  // row 7
+    mkRow('T.....WDDWW........T'),  // row 8  gym doors
+    mkRow('T..................T'),   // row 9
+    mkRow('T.BBBB...f.........T'),  // row 10 mart, sign (col 9)
+    mkRow('T.BFFB.............T'),  // row 11
+    mkRow('T.BDDB.............T'),  // row 12 mart doors
+    mkRow('T..................T'),   // row 13 (player arrives)
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 14 border (exit to route3)
+  ],
+  exits: [
+    { x:9,  y:0,  toMap:'route4',          toX:9,  toY:13 },
+    { x:10, y:0,  toMap:'route4',          toX:10, toY:13 },
+    { x:9,  y:14, toMap:'route3',          toX:9,  toY:1  },
+    { x:10, y:14, toMap:'route3',          toX:10, toY:1  },
+    { x:3,  y:4,  toMap:'streamport_center', toX:4, toY:5 },
+    { x:4,  y:4,  toMap:'streamport_center', toX:5, toY:5 },
+    { x:3,  y:12, toMap:'streamport_mart',   toX:4, toY:5  },
+    { x:4,  y:12, toMap:'streamport_mart',   toX:5, toY:5  },
+    { x:7,  y:8,  toMap:'gym3_interior',   toX:6,  toY:10 },
+    { x:8,  y:8,  toMap:'gym3_interior',   toX:7,  toY:10 },
+  ],
+  playerStart: { x:9, y:13 },
+  npcs: [
+    { id:'npc_sp1', x:12, y:5, dir:2, color:'#88bbff',
+      script:["Streamport — where every signal gets broadcast!","Gym Leader Liv masters Media-type Googlimon."] },
+    { id:'npc_sp2', x:17, y:9, dir:2, color:'#ff88aa',
+      script:["The Quantum Ocean glows at night.","They say its waves carry data from the Index itself."] },
+    { id:'npc_sp3', x:9, y:10, dir:2, color:'#ffcc44',
+      script:["A trainer with silver hair was asking about you.","Said something about a rematch. She looked serious."] },
+    { id:'livia', x:13, y:13, dir:2, color:'#cc88ff',
+      trainerName:'Livia', isTrainer:true, defeated:false,
+      team:[
+        generateWild('Chirper',   17),
+        generateWild('Influenix', 19),
+      ],
+      reward:1400,
+      script:[
+        "So you made it to Streamport.",
+        "I'm Livia. I heard about you from Avery.",
+        "Let's see if the hype is real.",
+      ],
+      defeatScript:[
+        "...Good. Really good.",
+        "Avery wasn't exaggerating.",
+        "My name is Livia — remember it. We'll meet again.",
+      ] },
+  ],
+};
+
+// ── Streamport Googlimon Center (10×8) ───────────────────────
+MAPS.streamport_center = {
+  name: "Streamport Googlimon Center",
+  w: 10, h: 8,
+  tiles: [
+    mkRow('WWWWWWWWWW'),
+    mkRow('WFCCCCCCFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFDFFFW'),
+    mkRow('WWWWWWWWWW'),
+  ],
+  exits: [{ x:5, y:6, toMap:'streamport', toX:3, toY:5 }],
+  playerStart: { x:4, y:5 },
+  npcs: [
+    { id:'nurse_sp', x:5, y:1, dir:2, color:'#ffbbcc',
+      script:["Welcome to the Streamport Googlimon Center!","All signals restored — your Googlimon are healed!"] },
+  ],
+};
+
+// ── Streamport Mart (10×8) ────────────────────────────────────
+MAPS.streamport_mart = {
+  name: "Streamport Mart",
+  w: 10, h: 8,
+  tiles: [
+    mkRow('WWWWWWWWWW'),
+    mkRow('WFCCCCCCFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFDFFFW'),
+    mkRow('WWWWWWWWWW'),
+  ],
+  exits: [{ x:5, y:6, toMap:'streamport', toX:3, toY:13 }],
+  playerStart: { x:5, y:5 },
+  npcs: [
+    { id:'mart_clerk_sp', x:5, y:1, dir:2, color:'#ffffaa',
+      script:["Welcome to Streamport Mart!","Broadcasting supplies for the road ahead."] },
+  ],
+};
+
+// ── Gym 3 Interior — Broadcast Puzzle (14×12) ────────────────
+// Puzzle: Match the right hosts (NPCs with clues). Wrong combos = trainer battles.
+// Correct path is center; wrong trainers block left/right channels.
+MAPS.gym3_interior = {
+  name: "Liv's Gym — On Air",
+  w: 14, h: 12,
+  tiles: [
+    mkRow('WWWWWWWWWWWWWW'),  // row 0
+    mkRow('WFFFFFFFFFFFFW'),  // row 1  Liv at col 7
+    mkRow('WFFFFFFFFFFFFW'),  // row 2
+    mkRow('WWWFWWWWWFWWWW'),  // row 3  barriers, gaps at cols 3 and 9
+    mkRow('WFFFFFFFFFFFFW'),  // row 4
+    mkRow('WFFFFFFFFFFFFW'),  // row 5
+    mkRow('WWWWWFWWWWWWWW'),  // row 6  barrier, gap at col 5 (correct channel)
+    mkRow('WFFFFFFFFFFFFW'),  // row 7
+    mkRow('WFFFFFFFFFFFFW'),  // row 8
+    mkRow('WFFFFFFFFFFFFW'),  // row 9
+    mkRow('WFFFFFFFFFFFFW'),  // row 10
+    mkRow('WWWWWWDWWWWWWW'),  // row 11 entrance
+  ],
+  exits: [{ x:6, y:11, toMap:'streamport', toX:7, toY:9 }],
+  playerStart: { x:6, y:10 },
+  npcs: [
+    { id:'gym3_trainer_1', x:2, y:5, dir:2, color:'#ff8888',
+      trainerName:'Host Chan A', isTrainer:true, defeated:false,
+      team:[ generateWild('Streamit',18), generateWild('Clipster',19) ],
+      reward:570,
+      script:["WRONG CHANNEL! You're on the red broadcast!"],
+      defeatScript:["Static... signal lost."] },
+    { id:'gym3_trainer_2', x:11, y:5, dir:2, color:'#8888ff',
+      trainerName:'Host Chan B', isTrainer:true, defeated:false,
+      team:[ generateWild('Casthound',19), generateWild('Streamit',18) ],
+      reward:570,
+      script:["INCORRECT FREQUENCY! Blue channel only!"],
+      defeatScript:["Off air... "] },
+    { id:'gym3_trainer_3', x:7, y:8, dir:2, color:'#88ffaa',
+      trainerName:'Producer Ames', isTrainer:true, defeated:false,
+      team:[ generateWild('Clipster',19), generateWild('Casthound',20) ],
+      reward:630,
+      script:["You found the center channel! But you still face me!"],
+      defeatScript:["Go ahead — but Liv is live and waiting."] },
+    { id:'liv_streamport', x:7, y:1, dir:2, color:'#44ffcc',
+      trainerName:'Liv', isTrainer:true, defeated:false,
+      team:[
+        generateWild('Streamit',  20),
+        generateWild('Casthound', 22),
+        generateWild('Viralord',  24),
+      ],
+      reward:2800,
+      script:[
+        "Liv here — live from the Streamport Gym!",
+        "My Viralord spreads data across all channels.",
+        "Let's see if you can keep up with real broadcast speed!",
+      ],
+      defeatScript:[
+        "...You disrupted every channel. Incredible.",
+        "The Cache Badge is yours.",
+        "Take TM: Broadcast — and watch out for what's ahead.",
+        "The clouds over Cloud City look... wrong.",
+      ] },
+    { id:'npc_gym3_clue', x:3, y:10, dir:2, color:'#888888',
+      script:["A broadcast schedule on the wall says:","Green = correct channel. Red and Blue are noise.","Find the center path and stay on air!"] },
+  ],
+};
+
+// ── Route 4 — Streamport → Cloud City (20×15) ────────────────
+MAPS.route4 = {
+  name: 'Route 4',
+  w: 20, h: 15,
+  tiles: [
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 0  border (exit to cloud_city)
+    mkRow('T..................T'),   // row 1
+    mkRow('T..gGGGGGGGGGGGg..T'),  // row 2
+    mkRow('T..gGGGGGGGGGGGg..T'),  // row 3
+    mkRow('T..gGGGGGGGGGGGg..T'),  // row 4
+    mkRow('T..................T'),   // row 5  breather
+    mkRow('T.f....gGGGGGg....T'),  // row 6  sign
+    mkRow('T......gGGGGGg....T'),  // row 7
+    mkRow('T......gGGGGGg....T'),  // row 8  trainer
+    mkRow('T..................T'),   // row 9
+    mkRow('T..gGGGGGGGGGg....T'),  // row 10
+    mkRow('T..gGGGGGGGGGg....T'),  // row 11 trainer
+    mkRow('T..................T'),   // row 12
+    mkRow('T..................T'),   // row 13 (player arrives from streamport)
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 14 border (exit to streamport)
+  ],
+  exits: [
+    { x:9,  y:0,  toMap:'cloud_city', toX:9,  toY:13 },
+    { x:10, y:0,  toMap:'cloud_city', toX:10, toY:13 },
+    { x:9,  y:14, toMap:'streamport', toX:9,  toY:1  },
+    { x:10, y:14, toMap:'streamport', toX:10, toY:1  },
+  ],
+  playerStart: { x:9, y:13 },
+  encounterPool: [
+    { name:'Nimbusheep', minLv:22, maxLv:25, weight:30 },
+    { name:'Cloudram',   minLv:23, maxLv:26, weight:22 },
+    { name:'Droplet',    minLv:22, maxLv:25, weight:25 },
+    { name:'Stormlet',   minLv:23, maxLv:26, weight:23 },
+  ],
+  npcs: [
+    { id:'npc_r4_sign', x:2, y:6, dir:2, color:'#886600',
+      script:["Route 4 — The sky road to Cloud City.","Cloud-type Googlimon form from atmospheric data."] },
+    { id:'trainer_r4_aria', x:13, y:8, dir:2, color:'#aaddff',
+      trainerName:'Cloud Rider Aria', isTrainer:true, defeated:false,
+      team:[ generateWild('Nimbusheep',23), generateWild('Droplet',24) ],
+      reward:720,
+      script:["Up here the air is pure data — feel the pressure!"],
+      defeatScript:["I got scattered like clouds before a storm."] },
+    { id:'trainer_r4_bolt', x:10, y:11, dir:2, color:'#ffee44',
+      trainerName:'Static Bolt', isTrainer:true, defeated:false,
+      team:[ generateWild('Stormlet',24), generateWild('Cloudram',25) ],
+      reward:750,
+      script:["THUNDER AND DATA — the perfect combination!"],
+      defeatScript:["...Discharged."] },
+  ],
+};
+
+// ── Cloud City (20×15) ────────────────────────────────────────
+MAPS.cloud_city = {
+  name: 'Cloud City',
+  w: 20, h: 15,
+  tiles: [
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 0  border (no route yet — Firewall Falls)
+    mkRow('T...g......g.......T'),  // row 1  floating platform aesthetic
+    mkRow('T.BBBB..........BBT'),   // row 2  center (cols 2-5), cloud lab (cols 17-18)
+    mkRow('T.BFFB..........BBT'),   // row 3
+    mkRow('T.BDDB.............T'),  // row 4  center doors
+    mkRow('T...g.......g......T'),  // row 5  decorative grass (platform gaps)
+    mkRow('T.....WWWWW........T'),  // row 6  gym building
+    mkRow('T.....WFFFW........T'),  // row 7
+    mkRow('T.....WDDWW........T'),  // row 8  gym doors
+    mkRow('T..................T'),   // row 9
+    mkRow('T.g....f......g....T'),  // row 10 sign (col 7)
+    mkRow('T..................T'),   // row 11
+    mkRow('T..................T'),   // row 12
+    mkRow('T..................T'),   // row 13 (player arrives)
+    mkRow('TTTTTTTTT..TTTTTTTTT'),  // row 14 border (exit to route4)
+  ],
+  exits: [
+    { x:9,  y:14, toMap:'route4',          toX:9,  toY:1  },
+    { x:10, y:14, toMap:'route4',          toX:10, toY:1  },
+    { x:3,  y:4,  toMap:'cloud_city_center', toX:4, toY:5 },
+    { x:4,  y:4,  toMap:'cloud_city_center', toX:5, toY:5 },
+    { x:7,  y:8,  toMap:'gym4_interior',   toX:6,  toY:10 },
+    { x:8,  y:8,  toMap:'gym4_interior',   toX:7,  toY:10 },
+  ],
+  playerStart: { x:9, y:13 },
+  npcs: [
+    { id:'npc_cc1', x:12, y:5, dir:2, color:'#aaddff',
+      script:["Cloud City — built on server towers high above the grid.","The Index uploads its data through the clouds here."] },
+    { id:'npc_cc2', x:17, y:11, dir:2, color:'#ccccff',
+      script: () => SAVE.flags.cloud_crisis
+        ? ["The sky has been flickering.", "Something in the Index is broken."]
+        : ["Gym Leader Nimbus processes the sky's data streams."] },
+    { id:'npc_cc3', x:7, y:10, dir:2, color:'#ffcc44',
+      script:["Nimbus says: the cloud is a living system.","Data flows like weather — understand the patterns, master the sky."] },
+  ],
+};
+
+// ── Cloud City Googlimon Center (10×8) ───────────────────────
+MAPS.cloud_city_center = {
+  name: "Cloud City Googlimon Center",
+  w: 10, h: 8,
+  tiles: [
+    mkRow('WWWWWWWWWW'),
+    mkRow('WFCCCCCCFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFFFFFW'),
+    mkRow('WFFFFDFFFW'),
+    mkRow('WWWWWWWWWW'),
+  ],
+  exits: [{ x:5, y:6, toMap:'cloud_city', toX:3, toY:5 }],
+  playerStart: { x:5, y:5 },
+  npcs: [
+    { id:'nurse_cc', x:5, y:1, dir:2, color:'#ffbbcc',
+      script: () => SAVE.flags.cloud_crisis
+        ? ["The healing systems are still online — rest here.", "Your Googlimon are healed."]
+        : ["Welcome to the Cloud City Googlimon Center!", "Healing complete!"] },
+  ],
+};
+
+// ── Gym 4 Interior — Data Routing Puzzle (14×12) ─────────────
+// Puzzle: Route data through server nodes. Wrong nodes = trainer battles.
+// Path: Enter → find node A (col 3, row 8) → node B (col 10, row 5) → Nimbus
+MAPS.gym4_interior = {
+  name: "Nimbus's Gym — Cloud Array",
+  w: 14, h: 12,
+  tiles: [
+    mkRow('WWWWWWWWWWWWWW'),  // row 0
+    mkRow('WFFFFFFFFFFFFW'),  // row 1  Nimbus at col 7
+    mkRow('WFFFFFFFFFFFFW'),  // row 2
+    mkRow('WWWWWWWWWWWWWW'),  // row 3  SOLID barrier (portal only)
+    mkRow('WFFFFFFFFFFFFW'),  // row 4
+    mkRow('WFFFFFFFFFFFFW'),  // row 5  portals added via override below
+    mkRow('WFFFFFFFFFFFFW'),  // row 6
+    mkRow('WWWWWWWWWWWWWW'),  // row 7  SOLID barrier (portal only)
+    mkRow('WFFFFFFFFFFFFW'),  // row 8
+    mkRow('WFFFFFFFFFFFFW'),  // row 9  portals added via override below
+    mkRow('WFFFFFFFFFFFFW'),  // row 10
+    mkRow('WWWWWWDWWWWWWW'),  // row 11 entrance
+  ],
+  exits: [
+    { x:2,  y:9,  toMap:'gym4_interior', toX:11, toY:10 },  // wrong  → dead end (clue NPC)
+    { x:10, y:9,  toMap:'gym4_interior', toX:5,  toY:4  },  // correct → middle zone (floor)
+    { x:2,  y:5,  toMap:'gym4_interior', toX:3,  toY:10 },  // wrong  → back to entry zone
+    { x:10, y:5,  toMap:'gym4_interior', toX:7,  toY:2  },  // correct → near Nimbus
+    { x:6,  y:11, toMap:'cloud_city',    toX:7,  toY:9  },
+  ],
+  playerStart: { x:6, y:10 },
+  npcs: [
+    { id:'gym4_trainer_1', x:7, y:8, dir:2, color:'#aaddff',
+      trainerName:'Packet Ryo', isTrainer:true, defeated:false,
+      team:[ generateWild('Nimbusheep',26), generateWild('Droplet',26) ],
+      reward:810,
+      script:["This server node is OFFLINE to unauthorized users!"],
+      defeatScript:["...Node rerouted. Pass."] },
+    { id:'gym4_trainer_2', x:5, y:4, dir:2, color:'#8888ff',
+      trainerName:'Relay Dex', isTrainer:true, defeated:false,
+      team:[ generateWild('Stormlet',27), generateWild('Cloudram',27) ],
+      reward:840,
+      script:["You routed through Node A?! Impossible!"],
+      defeatScript:["Data packet... lost."] },
+    { id:'nimbus', x:7, y:1, dir:2, color:'#ccddff',
+      trainerName:'Nimbus', isTrainer:true, defeated:false,
+      team:[
+        generateWild('Nimbusheep', 26),
+        generateWild('Cloudram',   28),
+        generateWild('Datacloud',  30),
+      ],
+      reward:3500,
+      script:[
+        "Nimbus. Controller of the Cloud Array.",
+        "Data flows through this city like breath.",
+        "My Datacloud will scatter your signals completely.",
+      ],
+      defeatScript:[
+        "...You rerouted every pathway. I'm impressed.",
+        "The Query Badge is yours.",
+        "Take TM: Cloud Burst — the sky is now open to you.",
+        "But something is wrong above the city. The Index...",
+        "Get out of here before the cascade starts.",
+      ] },
+    { id:'npc_gym4_clue', x:11, y:10, dir:2, color:'#888888',
+      script:["A routing map on the wall:","Node A (bottom left) sends data upward.","Node B (upper right) feeds the Cloud Array.","Wrong nodes trigger defense protocols."] },
+  ],
+};
+
+// Add portal tiles to gym4 (left=wrong, right=correct, matching gym2 pattern)
+MAPS.gym4_interior.tiles[5] = mkRow('WFPFFFFFFFPFFW');   // Middle portals: wrong(col2) correct(col10)
+MAPS.gym4_interior.tiles[9] = mkRow('WFPFFFFFFFPFFW');   // Entry portals:  wrong(col2) correct(col10)
+
+// ============================================================
+// CLOUD CRISIS CUTSCENE STATE
+// ============================================================
+const cloudCrisisState = (function() {
+  let phase = 0;      // 0=glitch in, 1=dialogue, 2=fade out
+  let tick = 0;
+  let dlgIdx = 0;
+  let dlgRevealed = 0;
+  let dlgTimer = 0;
+
+  const DIALOGUE = [
+    { speaker:'— SYSTEM —',  text:'CLOUD CITY ARRAY CRITICAL FAILURE', color:'#ff4444' },
+    { speaker:'— SYSTEM —',  text:'INDEX INSTABILITY DETECTED — CASCADE IN PROGRESS', color:'#ff4444' },
+    { speaker:'Prof. Search', text:'This is Professor Search — emergency broadcast!', color:'#44ffaa' },
+    { speaker:'Prof. Search', text:'The Index is destabilizing. Data nodes going dark across the region.', color:'#44ffaa' },
+    { speaker:'Prof. Search', text:'Something triggered this from inside Cloud City. I need your help.', color:'#44ffaa' },
+    { speaker:'— ???  —',    text:'Heh. Found it at last.', color:'#ff6622' },
+    { speaker:'Executive Glitch', text:"The Index wasn't built. It was DISCOVERED.", color:'#ff6622' },
+    { speaker:'Executive Glitch', text:'Team Malware will extract it before your \"professors\" even understand it.', color:'#ff6622' },
+    { speaker:'Executive Glitch', text:'Enjoy watching your world glitch out. We\'re just getting started.', color:'#ff6622' },
+    { speaker:'— SYSTEM —',  text:'Firewall Falls emergency access UNLOCKED', color:'#44aaff' },
+    { speaker:'',            text:'[ Press Enter to continue ]', color:'#888888' },
+  ];
+
+  function enter() {
+    phase = 0; tick = 0; dlgIdx = 0; dlgRevealed = 0; dlgTimer = 0;
+    SAVE.flags.cloud_crisis = true;
+    Sound.playTrack('over_crisis');
+  }
+
+  function update() {
+    tick++;
+    if (phase === 0) {
+      if (tick > 80) { phase = 1; tick = 0; }
+      return;
+    }
+    if (phase === 1) {
+      const line = DIALOGUE[dlgIdx];
+      const fullLen = line.text.length;
+      dlgTimer++;
+      if (dlgTimer >= 2 && dlgRevealed < fullLen) {
+        dlgRevealed++;
+        dlgTimer = 0;
+      }
+      // Last line is just a prompt — advance on confirm
+      if (dlgIdx === DIALOGUE.length - 1 && dlgRevealed >= fullLen) {
+        if (confirmPressed()) {
+          phase = 2; tick = 0;
+        }
+      } else if (dlgRevealed >= fullLen) {
+        if (confirmPressed()) {
+          dlgIdx++;
+          dlgRevealed = 0;
+          dlgTimer = 0;
+        }
+      }
+      return;
+    }
+    if (phase === 2) {
+      if (tick > 60) {
+        setState('overworld', PLAYER.mapId);
+      }
+    }
+  }
+
+  function render() {
+    fr(0, 0, W, H, '#000000');
+
+    // Glitch noise overlay during phase 0
+    if (phase === 0) {
+      const glitchAmt = Math.max(0, 1 - tick / 80);
+      for (let i = 0; i < 12; i++) {
+        const gx = Math.floor((tick * 37 + i * 97) % W);
+        const gy = Math.floor((tick * 13 + i * 53) % H);
+        const gw = Math.floor(20 + (i * 23) % 60);
+        ctx.fillStyle = `rgba(${(i*30)%256},${(i*70)%256},255,${glitchAmt * 0.4})`;
+        ctx.fillRect(gx, gy, gw, 3);
+      }
+      ctx.fillStyle = `rgba(255,0,0,${glitchAmt * 0.15})`;
+      ctx.fillRect(0, 0, W, H);
+      drawTextC('SYSTEM FAILURE', H/2 - 8, { color: '#ff4444', size: 14, align:'center', shadow:true });
+      return;
+    }
+
+    // Dialogue phase
+    if (phase === 1) {
+      // Animated scanlines
+      for (let y = 0; y < H; y += 4) {
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(0, y, W, 2);
+      }
+      // Glitch flickers
+      if (Math.floor(tick / 6) % 7 === 0) {
+        ctx.fillStyle = 'rgba(255,0,80,0.08)';
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      // Speaker + dialogue box
+      const line = DIALOGUE[dlgIdx];
+      const boxY = H - 90;
+      drawPanel(8, boxY, W - 16, 80, { bg:'rgba(0,4,12,0.95)', outer: line.color, inner:'#111' });
+
+      if (line.speaker) {
+        drawText(line.speaker, 20, boxY + 10, { color: line.color, size: 8, shadow: true });
+      }
+      const shown = line.text.slice(0, dlgRevealed);
+      drawText(shown, 20, boxY + 28, { color: '#ddeeff', size: 8, shadow: false });
+
+      // Progress indicator
+      if (dlgRevealed >= line.text.length && dlgIdx < DIALOGUE.length - 1) {
+        const blink = Math.floor(tick / 20) % 2 === 0;
+        if (blink) drawText('▼', W - 24, boxY + 60, { color:'#888888', size:8 });
+      }
+
+      // Scene label (top left)
+      drawText('MIDGAME CRISIS', 12, 10, { color:'#ff4444', size:7, shadow:true });
+      const prog = `${dlgIdx + 1} / ${DIALOGUE.length}`;
+      drawText(prog, W - 12, 10, { color:'#444444', size:6, align:'right' });
+    }
+
+    // Fade out
+    if (phase === 2) {
+      const alpha = Math.min(1, tick / 60);
+      ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  return { enter, update, render };
+})();
+STATES.cloud_crisis = cloudCrisisState;
+
 // ── Mart State ────────────────────────────────────────────────
 const MART_ITEMS = [
   { name:'Cache Ball',   price:200, key:'Cache Ball'   },
@@ -3681,10 +4768,14 @@ STATES.mart = martState;
 // ── Badge Case State ──────────────────────────────────────────
 const badgeCaseState = (function() {
   const BADGE_INFO = [
-    { name:'Index Badge', desc:'Awarded by Scout Searcher.', color:'#f5c542' },
-    { name:'Link Badge',  desc:'Awarded by the next Gym Leader.', color:'#00aacc' },
-    { name:'Cache Badge', desc:'Awarded by the next Gym Leader.', color:'#44cc77' },
-    { name:'Query Badge', desc:'Awarded by the next Gym Leader.', color:'#ff4455' },
+    { name:'Index Badge',   desc:'Scout Searcher — Searchburg',  color:'#f5c542' },
+    { name:'Link Badge',    desc:'Tabitha — Browser Bay',        color:'#00aacc' },
+    { name:'Cache Badge',   desc:'Liv — Streamport',            color:'#44cc77' },
+    { name:'Query Badge',   desc:'Nimbus — Cloud City',          color:'#ff4455' },
+    { name:'Stream Badge',  desc:'??? — ???',                    color:'#cc44ff' },
+    { name:'Circuit Badge', desc:'??? — ???',                    color:'#ff8833' },
+    { name:'Quantum Badge', desc:'??? — ???',                    color:'#44aaff' },
+    { name:'Cosmic Badge',  desc:"Champion's Badge",            color:'#aaaaff' },
   ];
 
   function enter() {}
@@ -3698,29 +4789,30 @@ const badgeCaseState = (function() {
   function render() {
     fr(0, 0, W, H, PAL.BG);
     drawPanel(4, 4, W-8, H-8, { bg:PAL.PANEL, outer:PAL.GOLD, inner:PAL.BORDER });
-    drawText('BADGE CASE', W/2, 16, { color:PAL.GOLD, size:11, align:'center', shadow:true });
+    drawText('BADGE CASE', W/2, 12, { color:PAL.GOLD, size:11, align:'center', shadow:true });
 
+    // 2 columns × 4 rows, compact layout to fit H=320
     BADGE_INFO.forEach((bi, i) => {
       const col2 = i % 2, row2 = Math.floor(i/2);
-      const bx2 = 24 + col2*228, by2 = 48 + row2*100;
+      const bx2 = 18 + col2*234, by2 = 30 + row2*66;
       const earned = SAVE.badges.includes(bi.name);
-      fr(bx2, by2, 200, 80, earned ? '#0a1a28' : '#060c14');
-      sr(bx2, by2, 200, 80, earned ? bi.color : PAL.BORDER, earned ? 2 : 1);
+      fr(bx2, by2, 210, 58, earned ? '#0a1a28' : '#060c14');
+      sr(bx2, by2, 210, 58, earned ? bi.color : PAL.BORDER, earned ? 2 : 1);
       // Badge gem
-      const gem = { x: bx2+24, y: by2+28 };
-      fr(gem.x-12, gem.y-12, 24, 24, earned ? bi.color : PAL.TEXT_DIM);
-      fr(gem.x-8,  gem.y-8,  16, 16, earned ? bi.color+'cc' : '#111');
+      const gem = { x: bx2+22, y: by2+22 };
+      fr(gem.x-10, gem.y-10, 20, 20, earned ? bi.color : PAL.TEXT_DIM);
+      fr(gem.x-7,  gem.y-7,  14, 14, earned ? bi.color+'cc' : '#111');
       if (earned) {
         ctx.fillStyle = '#ffffff44';
-        ctx.beginPath(); ctx.arc(gem.x-3, gem.y-3, 5, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(gem.x-2, gem.y-2, 4, 0, Math.PI*2); ctx.fill();
       }
-      drawText(bi.name, bx2+50, by2+14, { color: earned ? bi.color : PAL.TEXT_DIM, size:8, shadow:earned });
-      drawText(earned ? bi.desc : '???', bx2+50, by2+32, { color: PAL.TEXT_DIM, size:6 });
-      if (earned) drawText('✓ Earned', bx2+50, by2+52, { color:PAL.GOLD, size:6 });
+      drawText(bi.name, bx2+44, by2+9,  { color: earned ? bi.color : PAL.TEXT_DIM, size:7, shadow:earned });
+      drawText(earned ? bi.desc : '???', bx2+44, by2+23, { color: PAL.TEXT_DIM, size:6 });
+      if (earned) drawText('✓ Earned', bx2+44, by2+38, { color:PAL.GOLD, size:6 });
     });
 
-    drawText(`Badges: ${SAVE.badges.length} / ${BADGE_INFO.length}`, W/2, H-28, { color:PAL.ACCENT, size:7, align:'center' });
-    drawText('[ Enter / E / B ] Close', W/2, H-14, { color:PAL.TEXT_DIM, size:6, align:'center' });
+    drawText(`Badges: ${SAVE.badges.length} / ${BADGE_INFO.length}`, W/2, H-22, { color:PAL.ACCENT, size:7, align:'center' });
+    drawText('[ Enter / E / B ] Close', W/2, H-10, { color:PAL.TEXT_DIM, size:6, align:'center' });
   }
 
   return { enter, update, render };
@@ -3882,13 +4974,13 @@ function drawBattleSprite(name, cx, cy, side, size) {
 // ── Global badge info (8 gyms) ───────────────────────────────
 const ALL_BADGES = [
   { name:'Index Badge',   desc:'Scout Searcher — Searchburg',  color:'#f5c542' },
-  { name:'Link Badge',    desc:'??? — ???',                    color:'#00aacc' },
-  { name:'Cache Badge',   desc:'??? — ???',                    color:'#44cc77' },
-  { name:'Query Badge',   desc:'??? — ???',                    color:'#ff4455' },
+  { name:'Link Badge',    desc:'Tabitha — Browser Bay',        color:'#00aacc' },
+  { name:'Cache Badge',   desc:'Liv — Streamport',            color:'#44cc77' },
+  { name:'Query Badge',   desc:'Nimbus — Cloud City',          color:'#ff4455' },
   { name:'Stream Badge',  desc:'??? — ???',                    color:'#cc44ff' },
   { name:'Circuit Badge', desc:'??? — ???',                    color:'#ff8833' },
   { name:'Quantum Badge', desc:'??? — ???',                    color:'#44aaff' },
-  { name:'Cosmic Badge',  desc:'Champion\'s Badge',            color:'#aaaaff' },
+  { name:'Cosmic Badge',  desc:"Champion's Badge",            color:'#aaaaff' },
 ];
 
 // ── Save / Load ───────────────────────────────────────────────
@@ -3944,6 +5036,11 @@ function loadGame() {
       met_professor: false,
       starter_chosen: false,
       gym1_beaten: false,
+      gym2_beaten: false,
+      gym3_beaten: false,
+      gym4_beaten: false,
+      cloud_crisis: false,
+      rival_livia_1: false,
       malware_first_encounter: false,
       rival_battle_1: false,
     }, d.flags || {});
