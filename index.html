@@ -1277,7 +1277,10 @@ const spriteDebugState = (() => {
     scrollOff  = 0;
     loggedDone = false;
 
-    SPRITE_FILENAMES.forEach(filename => {
+    DEX_LIST.forEach(name => {
+      if (!name) return;
+      const filename = getSpriteFilename(name);
+      if (!filename) return;
       ['f', 'b'].forEach(side => {
         const url   = SPRITE_BASE + filename;
         const label = filename.replace(/\.png$/i, '') + ' (' + side + ')';
@@ -1292,7 +1295,7 @@ const spriteDebugState = (() => {
       });
     });
 
-    console.log('[Googlimon Sprite Debug] Probing ' + totalCount + ' image slots (' + SPRITE_FILENAMES.length + ' files \xd7 2 sides)');
+    console.log('[Googlimon Sprite Debug] Probing ' + totalCount + ' image slots (' + DEX_LIST.length + ' species \xd7 2 sides)');
     console.log('[Googlimon Sprite Debug] SPRITE_BASE = ' + SPRITE_BASE);
   }
 
@@ -3788,63 +3791,53 @@ STATES.controls = controlsState;
 // PART 6 — MENU SYSTEM, GOOGLIDEX, SAVE/LOAD
 // ============================================================
 
-// ── Dex species list (150 slots) ─────────────────────────────
+// ── Dex species list (150 entries, index+1 = dex number = file prefix) ──
+// Names are stored in filename-exact format: first letter upper, rest lower,
+// except abbreviations (USBear) and compound names (Directive_X, Index_Prime).
 const DEX_LIST = [
-  'Querycub','Puffbit','Thinklet',
-  'Pixmouse','Scoutgle','Seekrow','Findrake',
-  'Chirper','Mousenet','Bugbyte','Lockup',
-];
-while (DEX_LIST.length < 150) DEX_LIST.push('');
-
-// ── Real sprite filenames in assets/sprites/ (one image per
-//    species — e.g. "001_Querycub.png", no front/back variants) ─
-const SPRITE_FILENAMES = [
-  '001_Querycub.png','002_Searchound.png','003_Indexwolf.png','004_Puffbit.png','005_Nimbusheep.png',
-  '006_Cloudram.png','007_Thinklet.png','008_Cognibot.png','009_Mindframe.png','010_Pixmouse.png',
-  '011_Arcadent.png','012_Gamezard.png','013_Chirper.png','014_Trendove.png','015_Viravian.png',
-  '016_Bugbyte.png','017_Glitchbug.png','018_Crashroach.png','019_Mousenet.png','020_Packetrat.png',
-  '021_Gigarat.png','022_Scoutgle.png','023_Seekrow.png','024_Findrake.png','025_Lockup.png',
-  '026_Safelock.png','027_Forticode.png','028_Tabbit.png','029_Hoplink.png','030_Portalope.png',
-  '031_Chromunk.png','032_Cacheunk.png','033_Megachrome.png','034_Linklet.png','035_Hyperlynx.png',
-  '036_Warpard.png','037_Selfieon.png','038_Influenix.png','039_Fameflare.png','040_Memeling.png',
-  '041_Trendgeist.png','042_Viralord.png','043_Echoat.png','044_Amplibat.png','045_Reverberex.png',
-  '046_Streamit.png','047_Clipster.png','048_Broadcastor.png','049_Podpup.png','050_Casthound.png',
-  '051_Voxwolf.png','052_Shutterbug.png','053_Lensquito.png','054_Aperturon.png','055_Reelish.png',
-  '056_Filmfin.png','057_Cinemara.png','058_Adbyte.png','059_Sponsorix.png','060_Brandrake.png',
-  '061_Barkwall.png','062_Firewallf.png','063_Firewarden.png','064_Passling.png','065_Encryptoad.png',
-  '066_Cryptoadon.png','067_Sentinelbit.png','068_Watchtower.png','069_Guardianode.png','070_Bytelet.png',
-  '071_Gigabyte.png','072_Teradrive.png','073_Scrollimp.png','074_Archivox.png','075_Libracode.png',
-  '076_Datadillo.png','077_Backuparmor.png','078_Vaultitan.png','079_Screwbit.png','080_Chipmite.png',
-  '081_Motherbeast.png','082_USBear.png','083_Portitan.png','084_Docklord.png','085_Cablet.png',
-  '086_Wirevern.png','087_Gridrake.png','088_Servobot.png','089_Mechawork.png','090_Titanframe.png',
-  '091_Logling.png','092_Tracegeist.png','093_Debugraith.png','094_Kernelcub.png','095_Corehound.png',
-  '096_Mainfragon.png','097_Shieldisk.png','098_Aegicode.png','099_Lockjawl.png','100_Nullhound.png',
-  '101_Droplet.png','102_Stormlet.png','103_Tempestra.png','104_Fogbit.png','105_Mistream.png',
-  '106_Nebulisk.png','107_Cirrikit.png','108_Skycache.png','109_Atmosphor.png','110_Serverling.png',
-  '111_Datacloud.png','112_Skyserver.png','113_Chatling.png','114_Promptor.png','115_Omnimind.png',
-  '116_Logicub.png','117_Reasonox.png','118_Cognititan.png','119_Botlet.png','120_Taskatron.png',
-  '121_Directive_X.png','122_Simulynx.png','123_Forecastor.png','124_Precognira.png','125_Qubit.png',
-  '126_Entanglit.png','127_Superpossum.png','128_Fragmental.png','129_Indexor.png','130_Nexarion.png',
-  '131_Punchcardon.png','132_Mainframex.png','133_Megalithicode.png','134_Dialupup.png','135_Modemastiff.png',
-  '136_Terminalord.png','137_Cookiepie.png','138_Bookmarkle.png','139_Patchling.png','140_Querymew.png',
-  '141_Memorix.png','142_Predictra.png','143_Caretakra.png','144_Googlex.png','145_Cacheos.png',
-  '146_Algorithmon.png','147_Nullbyte.png','148_Archivus.png','149_Protoindex.png','150_Index_Prime.png',
+  'Querycub','Searchound','Indexwolf','Puffbit','Nimbusheep',
+  'Cloudram','Thinklet','Cognibot','Mindframe','Pixmouse',
+  'Arcadent','Gamezard','Chirper','Trendove','Viravian',
+  'Bugbyte','Glitchbug','Crashroach','Mousenet','Packetrat',
+  'Gigarat','Scoutgle','Seekrow','Findrake','Lockup',
+  'Safelock','Forticode','Tabbit','Hoplink','Portalope',
+  'Chromunk','Cacheunk','Megachrome','Linklet','Hyperlynx',
+  'Warpard','Selfieon','Influenix','Fameflare','Memeling',
+  'Trendgeist','Viralord','Echoat','Amplibat','Reverberex',
+  'Streamit','Clipster','Broadcastor','Podpup','Casthound',
+  'Voxwolf','Shutterbug','Lensquito','Aperturon','Reelish',
+  'Filmfin','Cinemara','Adbyte','Sponsorix','Brandrake',
+  'Barkwall','Firewallf','Firewarden','Passling','Encryptoad',
+  'Cryptoadon','Sentinelbit','Watchtower','Guardianode','Bytelet',
+  'Gigabyte','Teradrive','Scrollimp','Archivox','Libracode',
+  'Datadillo','Backuparmor','Vaultitan','Screwbit','Chipmite',
+  'Motherbeast','USBear','Portitan','Docklord','Cablet',
+  'Wirevern','Gridrake','Servobot','Mechawork','Titanframe',
+  'Logling','Tracegeist','Debugraith','Kernelcub','Corehound',
+  'Mainfragon','Shieldisk','Aegicode','Lockjawl','Nullhound',
+  'Droplet','Stormlet','Tempestra','Fogbit','Mistream',
+  'Nebulisk','Cirrikit','Skycache','Atmosphor','Serverling',
+  'Datacloud','Skyserver','Chatling','Promptor','Omnimind',
+  'Logicub','Reasonox','Cognititan','Botlet','Taskatron',
+  'Directive_X','Simulynx','Forecastor','Precognira','Qubit',
+  'Entanglit','Superpossum','Fragmental','Indexor','Nexarion',
+  'Punchcardon','Mainframex','Megalithicode','Dialupup','Modemastiff',
+  'Terminalord','Cookiepie','Bookmarkle','Patchling','Querymew',
+  'Memorix','Predictra','Caretakra','Googlex','Cacheos',
+  'Algorithmon','Nullbyte','Archivus','Protoindex','Index_Prime',
 ];
 
-const NAME_TO_SPRITE_FILE = {};
-SPRITE_FILENAMES.forEach(file => {
-  const slug = file.replace(/^\d+_/, '').replace(/\.png$/i, '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  NAME_TO_SPRITE_FILE[slug] = file;
-});
-
-// ── Sprite filename lookup, resolved against SPRITE_BASE
-//    (raw GitHub URL) — one image per species, used for both
-//    the front and back render keys ─────────────────────────
+// ── Sprite filename builder: ###_Name.png ─────────────────────
+// DEX_LIST index + 1 = dex number = file prefix. Names in DEX_LIST
+// are already in the exact format used in the filename.
 function getSpriteFilename(name) {
-  const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  return NAME_TO_SPRITE_FILE[slug] || null;
+  const idx = DEX_LIST.indexOf(name);
+  if (idx < 0) return null;
+  return String(idx + 1).padStart(3, '0') + '_' + name + '.png';
 }
 
+// One file per species; cache it under both front and back keys
+// so drawBattleSprite can flip for the player's back-view.
 function tryLoadBattleSprites(name) {
   const file = getSpriteFilename(name);
   if (!file) return;
@@ -3864,7 +3857,16 @@ function drawBattleSprite(name, cx, cy, side, size) {
   const img = getSprite(key);
   if (img) {
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, cx - size/2, cy - size/2, size, size);
+    if (side === 'back') {
+      // Flip horizontally so the player's mon faces away from the camera
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(-1, 1);
+      ctx.drawImage(img, -size/2, -size/2, size, size);
+      ctx.restore();
+    } else {
+      ctx.drawImage(img, cx - size/2, cy - size/2, size, size);
+    }
     return;
   }
   // Fallback: generic silhouette
