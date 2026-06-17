@@ -3191,8 +3191,11 @@ const battleState = (function() {
     // Status
     if (wild.status) drawText(wild.status, ep.x+6, ep.y+70, { color:PAL.CORRUPTED, size:6 });
 
-    // ── Wild sprite (top-left) ────────────────────────────────
-    renderWildSprite(W*0.22, 72);
+    // ── Player sprite (top-left, back view) ──────────────────
+    drawBattleSprite(fighter.name, W*0.22, 72, 'back', 80);
+
+    // ── Wild/enemy sprite (mid-right, front view) ────────────
+    renderWildSprite(W*0.72, 130);
 
     // ── Player panel (mid-left) ───────────────────────────────
     const pp = { x: 8, y: 112, w: W*0.46, h: 56 };
@@ -3205,13 +3208,6 @@ const battleState = (function() {
     const xpRat = fighter.xpToNext > 0 ? fighter.xp/fighter.xpToNext : 0;
     drawBar(pp.x+6, pp.y+42, pp.w-12, 4, xpRat, PAL.EXP);
 
-    // ── Player battle sprite (mid-right) ─────────────────────
-    const bc = W*0.72, by2 = 130;
-    fr(bc-8, by2-24, 16, 20, PAL.ACCENT);
-    fr(bc-6, by2-38, 12, 14, '#ffcc99');
-    fr(bc-6, by2-40, 12, 4,  '#554433');
-    fr(bc-6, by2-10, 5, 8,   '#226699');
-    fr(bc+1, by2-10, 5, 8,   '#226699');
 
     // ── Message log ───────────────────────────────────────────
     const lp = { x:4, y:174, w:W-8, h:58 };
