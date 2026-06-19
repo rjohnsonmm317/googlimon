@@ -121,6 +121,7 @@ body {
 <div id="hint">WASD · Arrows = Move &nbsp;|&nbsp; Enter = Confirm/Talk &nbsp;|&nbsp; E = Menu/Back &nbsp;|&nbsp; F1 = Controls</div>
 
 <script src="js/constants.js"></script>
+<script src="js/data/googlimon.js"></script>
 <script>
 'use strict';
 
@@ -3122,68 +3123,7 @@ MAPS.route1 = {
   ],
 };
 
-// ── Type Effectiveness Chart ──────────────────────────────────
-const TYPE_CHART = (() => {
-  const ALL = ['Search','Browser','Cloud','Data','Media','AI',
-               'Security','Gaming','Social','Hardware','Electric','Virus','Quantum','Cosmic'];
-  const m = {};
-  ALL.forEach(a => { m[a] = {}; ALL.forEach(d => { m[a][d] = 1; }); });
-  function se(a, d) { m[a][d] = 2; }
-  function nve(a, d) { m[a][d] = 0.5; }
-
-  se('Search','Virus');    se('Search','Data');     se('Search','Browser');
-  nve('Search','Security'); nve('Search','Cloud');
-
-  se('Browser','Security'); se('Browser','Cloud');   se('Browser','Gaming');
-  nve('Browser','Virus');   nve('Browser','Data');
-
-  se('Cloud','Data');      se('Cloud','AI');        se('Cloud','Social');
-  nve('Cloud','Electric'); nve('Cloud','Security');
-
-  se('Data','AI');         se('Data','Quantum');    se('Data','Browser');
-  nve('Data','Virus');     nve('Data','Security');
-
-  se('Media','Social');    se('Media','Gaming');    se('Media','Browser');
-  nve('Media','Security'); nve('Media','Data');
-
-  se('AI','Search');       se('AI','Browser');      se('AI','Data');
-  nve('AI','Quantum');     nve('AI','Virus');
-
-  se('Security','Virus');  se('Security','Data');   se('Security','Browser');
-  nve('Security','Quantum'); nve('Security','AI');
-
-  se('Gaming','Social');   se('Gaming','Media');    se('Gaming','Hardware');
-  nve('Gaming','Security'); nve('Gaming','Data');
-
-  se('Social','Media');    se('Social','Gaming');   se('Social','Browser');
-  nve('Social','Security'); nve('Social','Data');
-
-  se('Hardware','Electric'); se('Hardware','Virus'); se('Hardware','Gaming');
-  nve('Hardware','Cloud');   nve('Hardware','Quantum');
-
-  se('Electric','Cloud');   se('Electric','Hardware'); se('Electric','Browser');
-  nve('Electric','Security'); nve('Electric','Data');
-
-  se('Virus','AI');  se('Virus','Browser'); se('Virus','Data'); se('Virus','Cloud');
-  nve('Virus','Security'); nve('Virus','Hardware');
-
-  se('Quantum','Security'); se('Quantum','AI'); se('Quantum','Browser'); se('Quantum','Electric');
-  nve('Quantum','Data');    nve('Quantum','Hardware');
-
-  se('Cosmic','Quantum'); se('Cosmic','Virus'); se('Cosmic','AI');
-  nve('Cosmic','Data');   nve('Cosmic','Security');
-
-  return m;
-})();
-
-function getEffectiveness(atkType, defType1, defType2) {
-  const e1 = (TYPE_CHART[atkType] && TYPE_CHART[atkType][defType1]) ?? 1;
-  const e2 = (defType2 && TYPE_CHART[atkType] && TYPE_CHART[atkType][defType2]) ?? 1;
-  return e1 * e2;
-}
-
-// ── Wild Googlimon Species Data ───────────────────────────────
-const SPECIES = {
+/* TYPE_CHART, getEffectiveness, SPECIES (initial block) → js/data/googlimon.js
   Pixmouse: {
     type1:'Data', type2:'Hardware',
     baseHp:36, baseAtk:8, baseDef:7, baseSpd:13,
@@ -3463,7 +3403,7 @@ const SPECIES = {
       {lv:9,move:{name:'Cloud Burst',type:'Cloud',   power:95,pp:10}},
     ],
   },
-};
+}; */
 
 // ── Googlidex helpers ─────────────────────────────────────────
 function dexSee(name) {
@@ -4303,152 +4243,7 @@ STATES.blackout = blackoutState;
 // PART 5 — Searchburg, Gym 1, Mart, Badge Case
 // ============================================================
 
-// ── New species ───────────────────────────────────────────────
-SPECIES.Seekrow = {
-  type1:'Search', type2:'AI',
-  baseHp:42, baseAtk:12, baseDef:9, baseSpd:14,
-  catchRate:90, xpYield:68,
-  learnset:[
-    {lv:1,  move:{name:'Query',      type:'Search',   power:35, pp:30, ppLeft:30}},
-    {lv:1,  move:{name:'Peck',       type:'Hardware', power:25, pp:40, ppLeft:40}},
-    {lv:4,  move:{name:'Smart Scan', type:'Search',   power:45, pp:20, ppLeft:20}},
-    {lv:7,  move:{name:'AI Talon',   type:'AI',       power:50, pp:15, ppLeft:15}},
-    {lv:10, move:{name:'Deep Search',type:'Search',   power:65, pp:10, ppLeft:10}},
-  ],
-};
-SPECIES.Findrake = {
-  type1:'Search',
-  baseHp:50, baseAtk:16, baseDef:12, baseSpd:12,
-  catchRate:50, xpYield:90,
-  learnset:[
-    {lv:1,  move:{name:'Find',       type:'Search',   power:35, pp:30, ppLeft:30}},
-    {lv:1,  move:{name:'Slash',      type:'Hardware', power:35, pp:25, ppLeft:25}},
-    {lv:5,  move:{name:'Index Claw', type:'Search',   power:55, pp:20, ppLeft:20}},
-    {lv:9,  move:{name:'Web Crawl',  type:'Browser',  power:45, pp:20, ppLeft:20}},
-    {lv:13, move:{name:'Rank Storm', type:'Search',   power:80, pp:10, ppLeft:10}},
-  ],
-};
-
-// ── Team Malware species ────────────────────────────────────
-SPECIES.Nullhound = {
-  type1:'Virus',
-  baseHp:40, baseAtk:14, baseDef:9, baseSpd:16,
-  catchRate:45, xpYield:95,
-  learnset:[
-    {lv:1, move:{name:'Corrupt Bite', type:'Virus',    power:35, pp:25, ppLeft:25}},
-    {lv:1, move:{name:'Snarl',        type:'Hardware', power:20, pp:35, ppLeft:35}},
-    {lv:4, move:{name:'Null Howl',    type:'Virus',    power:0,  pp:20, ppLeft:20, effect:'atk+1'}},
-    {lv:6, move:{name:'System Crash', type:'Virus',    power:55, pp:10, ppLeft:10}},
-  ],
-};
-
-// ── Starter species (not wild-catchable, needed for levelUpMon learnset/evo) ──
-SPECIES.Querycub = {
-  type1:'Search',
-  baseHp:30, baseAtk:8, baseDef:7, baseSpd:9,
-  catchRate:0, xpYield:65,
-  learnset:[
-    {lv:1, move:{name:'Search Pulse', type:'Search',   power:30, pp:30}},
-    {lv:1, move:{name:'Tackle',       type:'Hardware', power:30, pp:35}},
-    {lv:8, move:{name:'Quick Scan',   type:'Search',   power:45, pp:25}},
-    {lv:12,move:{name:'Sniff Trail',  type:'Search',   power:0,  pp:20, effect:'spd+1'}},
-    {lv:16,move:{name:'Deep Search',  type:'Search',   power:65, pp:15}},
-  ],
-};
-SPECIES.Searchound = {
-  type1:'Search', type2:'Data',
-  baseHp:48, baseAtk:13, baseDef:11, baseSpd:15,
-  catchRate:0, xpYield:105,
-  learnset:[
-    {lv:1, move:{name:'Deep Search',  type:'Search',   power:65, pp:15}},
-    {lv:1, move:{name:'Quick Scan',   type:'Search',   power:45, pp:25}},
-    {lv:18,move:{name:'Index Slash',  type:'Search',   power:70, pp:15}},
-    {lv:22,move:{name:'Data Howl',    type:'Data',     power:0,  pp:20, effect:'atk+1'}},
-    {lv:28,move:{name:'Link Break',   type:'Search',   power:85, pp:10}},
-  ],
-};
-SPECIES.Indexwolf = {
-  type1:'Search', type2:'Data',
-  baseHp:65, baseAtk:19, baseDef:16, baseSpd:21,
-  catchRate:0, xpYield:160,
-  learnset:[
-    {lv:1, move:{name:'Link Break',   type:'Search',   power:85, pp:10}},
-    {lv:1, move:{name:'Data Howl',    type:'Data',     power:0,  pp:20, effect:'atk+1'}},
-    {lv:30,move:{name:'Global Index', type:'Search',   power:100,pp:8}},
-    {lv:36,move:{name:'Cache Burst',  type:'Data',     power:90, pp:8}},
-  ],
-};
-SPECIES.Puffbit = {
-  type1:'Cloud',
-  baseHp:34, baseAtk:7, baseDef:9, baseSpd:7,
-  catchRate:0, xpYield:65,
-  learnset:[
-    {lv:1, move:{name:'Mist Byte',    type:'Cloud',    power:30, pp:30}},
-    {lv:1, move:{name:'Tackle',       type:'Hardware', power:30, pp:35}},
-    {lv:8, move:{name:'Cloud Puff',   type:'Cloud',    power:45, pp:25}},
-    {lv:12,move:{name:'Float',        type:'Cloud',    power:0,  pp:20, effect:'def+1'}},
-    {lv:16,move:{name:'Fog Screen',   type:'Cloud',    power:55, pp:20}},
-  ],
-};
-SPECIES.Thinklet = {
-  type1:'AI',
-  baseHp:28, baseAtk:9, baseDef:5, baseSpd:9,
-  catchRate:0, xpYield:65,
-  learnset:[
-    {lv:1, move:{name:'Neural Zap',   type:'AI',       power:35, pp:25}},
-    {lv:1, move:{name:'Tackle',       type:'Hardware', power:30, pp:35}},
-    {lv:8, move:{name:'Logic Pulse',  type:'AI',       power:45, pp:25}},
-    {lv:12,move:{name:'Process',      type:'AI',       power:0,  pp:20, effect:'atk+1'}},
-    {lv:16,move:{name:'Deep Think',   type:'AI',       power:60, pp:20}},
-  ],
-};
-SPECIES.Cognibot = {
-  type1:'AI', type2:'Hardware',
-  baseHp:45, baseAtk:15, baseDef:9, baseSpd:14,
-  catchRate:0, xpYield:110,
-  learnset:[
-    {lv:1, move:{name:'Deep Think',     type:'AI',       power:60, pp:20}},
-    {lv:1, move:{name:'Logic Pulse',    type:'AI',       power:45, pp:25}},
-    {lv:18,move:{name:'Circuit Charge', type:'AI',       power:70, pp:15}},
-    {lv:22,move:{name:'Neural Net',     type:'AI',       power:0,  pp:20, effect:'atk+1'}},
-    {lv:28,move:{name:'Code Crush',     type:'AI',       power:85, pp:10}},
-  ],
-};
-SPECIES.Mindframe = {
-  type1:'AI', type2:'Data',
-  baseHp:60, baseAtk:21, baseDef:13, baseSpd:19,
-  catchRate:0, xpYield:165,
-  learnset:[
-    {lv:1, move:{name:'Code Crush',     type:'AI',       power:85, pp:10}},
-    {lv:1, move:{name:'Circuit Charge', type:'AI',       power:70, pp:15}},
-    {lv:30,move:{name:'Overclocked',    type:'AI',       power:0,  pp:15, effect:'atk+2'}},
-    {lv:36,move:{name:'System Override',type:'AI',       power:110,pp:5}},
-  ],
-};
-
-// ── Evolution chains ─────────────────────────────────────────
-const EVOLUTIONS = {
-  // Starters
-  Querycub:   { into: 'Searchound', at: 16 },
-  Searchound: { into: 'Indexwolf',  at: 28 },
-  Puffbit:    { into: 'Nimbusheep', at: 16 },
-  Thinklet:   { into: 'Cognibot',   at: 16 },
-  Cognibot:   { into: 'Mindframe',  at: 28 },
-  // Wild
-  Pixmouse:   { into: 'Mousenet',   at: 10 },
-  Scoutgle:   { into: 'Seekrow',    at: 14 },
-  Seekrow:    { into: 'Findrake',   at: 22 },
-  Tabbit:     { into: 'Hoplink',    at: 16 },
-  Hoplink:    { into: 'Linklet',    at: 26 },
-  Chromunk:   { into: 'Cacheunk',   at: 20 },
-  Cacheunk:   { into: 'Megachrome', at: 32 },
-  Streamit:   { into: 'Clipster',   at: 16 },
-  Clipster:   { into: 'Casthound',  at: 24 },
-  Influenix:  { into: 'Viralord',   at: 30 },
-  Nimbusheep: { into: 'Cloudram',   at: 22 },
-  Droplet:    { into: 'Stormlet',   at: 20 },
-  Stormlet:   { into: 'Datacloud',  at: 30 },
-};
+// SPECIES overrides, starters, EVOLUTIONS → js/data/googlimon.js
 
 // ── Crawler Woods (13×19) — dense forest between Route 1 and Searchburg ──
 MAPS.crawler_woods = {
@@ -6771,11 +6566,8 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// ============================================================
-// GYMS 5-7 — NEW SPECIES
-// ============================================================
-
-// ── Security type ─────────────────────────────────────────────
+// GYMS 5-7 SPECIES + EVOLUTIONS additions → js/data/googlimon.js
+/* BEGIN REMOVED BLOCK
 SPECIES.Patchkit = {
   type1:'Security', baseHp:32, baseAtk:9, baseDef:12, baseSpd:7,
   catchRate:60, xpYield:70,
@@ -7029,8 +6821,10 @@ EVOLUTIONS.Prompter   = { into:'Inferron',    at:34 };
 EVOLUTIONS.Neuralith  = { into:'Omnisync',    at:46 };
 EVOLUTIONS.Corruptr   = { into:'Malwarix',    at:34 };
 EVOLUTIONS.Glitchworm = { into:'Glitchfiend', at:36 };
+END REMOVED BLOCK */
 
-// ── E4 / Datacenter Googlimon — DATA/ARCHIVE (Cache's team) ──
+// E4 / Datacenter + Security + Hardware + AI + Champion species → js/data/googlimon.js
+/* BEGIN REMOVED BLOCK
 SPECIES.Bytelet = {
   type1:'Data', baseHp:44, baseAtk:14, baseDef:18, baseSpd:10,
   catchRate:0, xpYield:140,
@@ -7258,16 +7052,8 @@ SPECIES.Nexarion = {
     {lv:70, move:{name:'Grand Nexus',   type:'Search',   power:150,pp:3}},
   ],
 };
-SPECIES.Nullbyte = {
-  type1:'Virus', type2:'AI', baseHp:90, baseAtk:38, baseDef:28, baseSpd:30,
-  catchRate:0, xpYield:0,
-  learnset:[
-    {lv:1,  move:{name:'Null Strike',    type:'Virus',    power:80, pp:10}},
-    {lv:1,  move:{name:'System Erase',   type:'Data',     power:90, pp:8}},
-    {lv:50, move:{name:'Index Collapse', type:'Virus',    power:0,  pp:6, effect:'atk+3'}},
-    {lv:60, move:{name:'Total Null',     type:'Virus',    power:150,pp:3}},
-  ],
-};
+SPECIES.Nullbyte = { type1:'Virus', type2:'AI', baseHp:90, baseAtk:38, baseDef:28, baseSpd:30, catchRate:0, xpYield:0, learnset:[] };
+END REMOVED BLOCK */
 
 // ============================================================
 // ROUTE 5 — Cloud City → Firewall Falls (20×15)
@@ -9974,9 +9760,8 @@ STATES.champion_victory = championVictoryState;
   });
 })();
 
-// ============================================================
-// DEEP WEB SPECIES — postgame encounters
-// ============================================================
+// Deep Web species → js/data/googlimon.js
+/* BEGIN REMOVED BLOCK
 SPECIES.Cookiepie = {
   type1:'Data', baseHp:62, baseAtk:22, baseDef:18, baseSpd:20,
   catchRate:30, xpYield:180,
@@ -10017,16 +9802,8 @@ SPECIES.Archivus = {
     {lv:68, move:{name:'Ancient Data',   type:'Data',   power:100,pp:6}},
   ],
 };
-SPECIES.Bookmarkle = {
-  type1:'Search', type2:'Data', baseHp:82, baseAtk:32, baseDef:28, baseSpd:30,
-  catchRate:3, xpYield:300,
-  learnset:[
-    {lv:1,  move:{name:'Saved Strike',  type:'Search', power:70,  pp:15}},
-    {lv:1,  move:{name:'Bookmark Beam', type:'Data',   power:80,  pp:10}},
-    {lv:60, move:{name:'First Page',    type:'Search', power:0,   pp:8, effect:'atk+3'}},
-    {lv:70, move:{name:'Index Eternal', type:'Search', power:130, pp:4}},
-  ],
-};
+SPECIES.Bookmarkle = { type1:'Search', type2:'Data', baseHp:82, baseAtk:32, baseDef:28, baseSpd:30, catchRate:3, xpYield:300, learnset:[] };
+END REMOVED BLOCK */
 
 // ============================================================
 // THE DEEP WEB — OUTER DRIFT (14×12)
